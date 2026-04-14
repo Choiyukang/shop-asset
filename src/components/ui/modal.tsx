@@ -24,11 +24,11 @@ export function Modal({ open, title, onClose, children, className }: ModalProps)
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div
         className={cn(
-          "w-full max-w-lg rounded-lg bg-white shadow-xl",
+          "flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg bg-white shadow-xl",
           className,
         )}
       >
-        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3">
+        <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-5 py-3">
           <h2 className="text-base font-semibold">{title}</h2>
           <button
             type="button"
@@ -39,7 +39,7 @@ export function Modal({ open, title, onClose, children, className }: ModalProps)
             닫기
           </button>
         </div>
-        <div className="px-5 py-4">{children}</div>
+        <div className="overflow-y-auto px-5 py-4">{children}</div>
       </div>
     </div>
   );

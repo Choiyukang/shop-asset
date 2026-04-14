@@ -96,7 +96,8 @@ export function SettingsPage() {
       }
       setGoogleStatus("구글 계정에 연결되었습니다.");
     } catch (err) {
-      setGoogleError(err instanceof Error ? err.message : "구글 연결에 실패했습니다.");
+      const msg = err instanceof Error ? err.message : typeof err === "string" ? err : JSON.stringify(err);
+      setGoogleError(`구글 연결에 실패했습니다: ${msg}`);
     } finally {
       setGoogleBusy(false);
     }

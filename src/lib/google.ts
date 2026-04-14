@@ -33,6 +33,16 @@ function clientId(): string {
   return id;
 }
 
+function clientSecret(): string {
+  const secret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
+  if (!secret || typeof secret !== "string" || secret.trim() === "") {
+    throw new Error(
+      "VITE_GOOGLE_CLIENT_SECRET이 설정되지 않았습니다. .env 파일을 확인하세요.",
+    );
+  }
+  return secret;
+}
+
 export function hasGoogleClientId(): boolean {
   const id = import.meta.env.VITE_GOOGLE_CLIENT_ID;
   return typeof id === "string" && id.trim() !== "";
@@ -41,6 +51,7 @@ export function hasGoogleClientId(): boolean {
 export async function connectGoogle(): Promise<GoogleTokens> {
   const tokens = await invoke<GoogleTokens>("google_oauth_start", {
     clientId: clientId(),
+    clientSecret: clientSecret(),
   });
   cachedTokens = tokens;
   return tokens;
@@ -65,6 +76,7 @@ async function getAccessToken(): Promise<string> {
   }
   const tokens = await invoke<GoogleTokens>("google_get_access_token", {
     clientId: clientId(),
+    clientSecret: clientSecret(),
   });
   cachedTokens = tokens;
   return tokens.access_token;

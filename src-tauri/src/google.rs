@@ -190,7 +190,7 @@ fn run_loopback_server(timeout: Duration) -> Result<(u16, std::sync::mpsc::Recei
     });
 
     // prevent unused warning
-    let _ = TcpStream::connect;
+    let _ = TcpStream::connect("127.0.0.1:0");
     Ok((port, rx))
 }
 
@@ -236,6 +236,7 @@ fn url_decode(input: &str) -> String {
 
 async fn exchange_code(
     client_id: &str,
+    client_secret: &str,
     code: &str,
     verifier: &str,
     redirect_uri: &str,
@@ -243,6 +244,7 @@ async fn exchange_code(
     let client = reqwest::Client::new();
     let form = [
         ("client_id", client_id),
+        ("client_secret", client_secret),
         ("code", code),
         ("code_verifier", verifier),
         ("grant_type", "authorization_code"),
@@ -283,11 +285,13 @@ async fn exchange_code(
 
 async fn refresh_access(
     client_id: &str,
+    client_secret: &str,
     refresh_token: &str,
 ) -> Result<TokenResponse, String> {
     let client = reqwest::Client::new();
     let form = [
         ("client_id", client_id),
+        ("client_secret", client_secret),
         ("refresh_token", refresh_token),
         ("grant_type", "refresh_token"),
     ];
@@ -309,9 +313,13 @@ async fn refresh_access(
 pub async fn google_oauth_start(
     app: tauri::AppHandle,
     client_id: String,
+    client_secret: String,
 ) -> Result<GoogleTokens, String> {
     if client_id.trim().is_empty() {
         return Err("client_id is empty".into());
+    }
+    if client_secret.trim().is_empty() {
+        return Err("client_secret is empty".into());
     }
 
     // PKCE
@@ -364,7 +372,7 @@ pub async fn google_oauth_start(
         .cloned()
         .ok_or_else(|| "code missing".to_string())?;
 
-    let (tokens, email) = exchange_code(&client_id, &code, &verifier, &redirect_uri).await?;
+    let (tokens, email) = exchange_code(&client_id, &client_secret, &code, &verifier, &redirect_uri).await?;
     if let Some(rt) = tokens.refresh_token.as_deref() {
         store_refresh_token(rt)?;
     } else {
@@ -382,9 +390,9 @@ pub async fn google_oauth_start(
 }
 
 #[tauri::command]
-pub async fn google_get_access_token(client_id: String) -> Result<GoogleTokens, String> {
+pub async fn google_get_access_token(client_id: String, client_secret: String) -> Result<GoogleTokens, String> {
     let rt = load_refresh_token()?.ok_or_else(|| "not_connected".to_string())?;
-    let tokens = refresh_access(&client_id, &rt).await?;
+    let tokens = refresh_access(&client_id, &client_secret, &rt).await?;
     let email = load_email().unwrap_or_default();
     let expires_at_ms = now_ms() + tokens.expires_in.unwrap_or(3600) * 1000;
     Ok(GoogleTokens {
