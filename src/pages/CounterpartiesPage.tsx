@@ -5,7 +5,8 @@ import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { Field } from "@/components/ui/field";
 import { useCounterpartyStore } from "@/stores/useCounterpartyStore";
-import type { CounterpartyInput, CounterpartyType } from "@/types";
+import type { Counterparty, CounterpartyInput, CounterpartyType } from "@/types";
+import { updateCounterparty } from "@/lib/db";
 
 const typeLabel: Record<CounterpartyType, string> = {
   supplier: "공급업체",
@@ -13,20 +14,47 @@ const typeLabel: Record<CounterpartyType, string> = {
   personal: "개인",
 };
 
+interface FormState extends CounterpartyInput {
+  commission_rate: number;
+}
+
+const emptyForm: FormState = {
+  name: "",
+  type: "supplier",
+  phone: "",
+  commission_rate: 0,
+};
+
 export function CounterpartiesPage() {
   const { counterparties, load, add, loading, error } = useCounterpartyStore();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<CounterpartyInput>({
-    name: "",
-    type: "supplier",
-    phone: "",
-  });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<FormState>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  function openCreate() {
+    setEditingId(null);
+    setForm(emptyForm);
+    setFormError(null);
+    setOpen(true);
+  }
+
+  function openEdit(c: Counterparty) {
+    setEditingId(c.id);
+    setForm({
+      name: c.name,
+      type: c.type,
+      phone: c.phone ?? "",
+      commission_rate: c.commission_rate ?? 0,
+    });
+    setFormError(null);
+    setOpen(true);
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -35,15 +63,28 @@ export function CounterpartiesPage() {
       setFormError("이름을 입력해 주세요.");
       return;
     }
+    const rate = Math.max(0, Math.min(100, Math.trunc(Number(form.commission_rate) || 0)));
     setSubmitting(true);
     try {
-      await add({
-        name: form.name.trim(),
-        type: form.type,
-        phone: form.phone?.trim() || null,
-      });
+      if (editingId) {
+        await updateCounterparty(editingId, {
+          name: form.name.trim(),
+          type: form.type,
+          phone: form.phone?.trim() || null,
+          commission_rate: rate,
+        });
+        await load();
+      } else {
+        await add({
+          name: form.name.trim(),
+          type: form.type,
+          phone: form.phone?.trim() || null,
+          commission_rate: rate,
+        });
+      }
       setOpen(false);
-      setForm({ name: "", type: "supplier", phone: "" });
+      setForm(emptyForm);
+      setEditingId(null);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "거래처 저장에 실패했습니다.");
     } finally {
@@ -58,7 +99,7 @@ export function CounterpartiesPage() {
           <h1 className="text-2xl font-bold">거래처</h1>
           <p className="text-sm text-neutral-500">공급업체 · 고객 · 개인을 등록해 거래에 연결합니다.</p>
         </div>
-        <Button onClick={() => setOpen(true)}>거래처 추가</Button>
+        <Button onClick={openCreate}>거래처 추가</Button>
       </div>
 
       {error && (
@@ -74,20 +115,22 @@ export function CounterpartiesPage() {
               <th className="px-4 py-3 font-medium">이름</th>
               <th className="px-4 py-3 font-medium">타입</th>
               <th className="px-4 py-3 font-medium">연락처</th>
+              <th className="px-4 py-3 font-medium">수수료율</th>
               <th className="px-4 py-3 font-medium">등록일</th>
+              <th className="px-4 py-3 font-medium">액션</th>
             </tr>
           </thead>
           <tbody>
             {loading && counterparties.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-neutral-500">
+                <td colSpan={6} className="px-4 py-8 text-center text-neutral-500">
                   불러오는 중…
                 </td>
               </tr>
             )}
             {!loading && counterparties.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-neutral-500">
+                <td colSpan={6} className="px-4 py-8 text-center text-neutral-500">
                   등록된 거래처가 없습니다.
                 </td>
               </tr>
@@ -97,14 +140,28 @@ export function CounterpartiesPage() {
                 <td className="px-4 py-3 font-medium text-neutral-900">{c.name}</td>
                 <td className="px-4 py-3 text-neutral-700">{typeLabel[c.type]}</td>
                 <td className="px-4 py-3 text-neutral-700">{c.phone ?? "—"}</td>
+                <td className="px-4 py-3 text-neutral-700">{c.commission_rate ?? 0}%</td>
                 <td className="px-4 py-3 text-neutral-500">{c.created_at.slice(0, 10)}</td>
+                <td className="px-4 py-3 text-neutral-500">
+                  <button
+                    type="button"
+                    className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100"
+                    onClick={() => openEdit(c)}
+                  >
+                    편집
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      <Modal open={open} title="거래처 추가" onClose={() => setOpen(false)}>
+      <Modal
+        open={open}
+        title={editingId ? "거래처 편집" : "거래처 추가"}
+        onClose={() => setOpen(false)}
+      >
         <form onSubmit={onSubmit} className="space-y-4">
           <Field label="이름" required>
             <Input
@@ -130,6 +187,18 @@ export function CounterpartiesPage() {
               value={form.phone ?? ""}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
               placeholder="010-1234-5678"
+            />
+          </Field>
+          <Field label="수수료율 (%)" hint="삼촌·중간 공급자에게 지급할 기본 수수료율 (0-100)">
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              value={form.commission_rate === 0 ? "" : form.commission_rate}
+              onChange={(e) =>
+                setForm({ ...form, commission_rate: Number(e.target.value || 0) })
+              }
+              placeholder="예: 10"
             />
           </Field>
           {formError && (

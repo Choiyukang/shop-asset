@@ -145,3 +145,46 @@
 - [ ] 거래 한 건이 여러 분류에 걸치는 경우 (예: 상품+운송비 혼합) → 한 거래로 볼지, 분할할지
 - [ ] 환율/외화 거래 지원 여부 (해외 사입 시 필요)
 - [ ] 삭제된 거래 처리 (hard delete vs soft delete with is_deleted flag)
+
+---
+
+## Phase 1.5 추가 (2026-04-14)
+
+Phase 1에서 의도적으로 제외했던 상품/재고를 추가하고, "삼촌" 같은 중간 공급자에게 거래 단위로 계산되는 수수료를 모델링한다.
+
+### Product (상품)
+| 필드 | 설명 | 예시 | 필수 |
+|------|------|------|------|
+| id | 고유 식별자 | prd-001 | O |
+| name | 상품명 | 봄 원피스 | O |
+| color | 깔(컬러) | 블랙 | X |
+| purchase_price | 사입가 (원) | 10000 | O (default 0) |
+| sale_price | 판매가 (원) | 25000 | O (default 0) |
+| stock | 현재고 | 12 | O (default 0) |
+| memo | 메모 |  | X |
+| created_at | 등록일 | 2026-04-14 | O |
+
+### TransactionItem (거래 라인)
+거래 1건이 여러 상품을 포함할 수 있도록 분리. `purchase`/`sale` 타입에서만 사용. `expense`는 라인 없이 amount만 입력.
+
+| 필드 | 설명 | 필수 |
+|------|------|------|
+| id | 고유 식별자 | O |
+| transaction_id | Transaction 참조 (CASCADE) | O |
+| product_id | Product 참조 (RESTRICT) | O |
+| quantity | 수량 | O |
+| unit_price | 단가 (원) | O |
+
+### Counterparty 확장
+- `commission_rate INTEGER NOT NULL DEFAULT 0` — 거래처 기본 수수료율(0-100%). 거래 입력 시 자동 적용 후 사용자가 override 가능.
+
+### Transaction 확장
+- `commission_amount INTEGER NOT NULL DEFAULT 0` — 해당 거래에 포함된 수수료. `amount = sum(items.qty * unit_price) + commission_amount`.
+
+### 재고 변동 규칙
+- `purchase` 거래 저장 시: `products.stock += quantity` (라인별)
+- `sale` 거래 저장 시: `products.stock -= quantity` (라인별)
+- 직접 보정은 상품 페이지의 "재고 조정" 버튼 (감사 추적 없음, 의도적 단순화)
+
+### 마이그레이션 호환성
+새 컬럼은 모두 `DEFAULT` 값을 가지며 `products`/`transaction_items`는 신규 테이블이므로 기존 사용자의 데이터는 그대로 유지된다.

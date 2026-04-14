@@ -1,10 +1,11 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Receipt, Users, Settings } from "lucide-react";
+import { LayoutDashboard, Receipt, Users, Package, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { to: "/", label: "대시보드", icon: LayoutDashboard, end: true },
   { to: "/transactions", label: "거래 내역", icon: Receipt, end: false },
+  { to: "/products", label: "상품", icon: Package, end: false },
   { to: "/counterparties", label: "거래처", icon: Users, end: false },
   { to: "/settings", label: "설정", icon: Settings, end: false },
 ];

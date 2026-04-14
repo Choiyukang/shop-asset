@@ -3,6 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { TransactionsPage } from "@/pages/TransactionsPage";
 import { CounterpartiesPage } from "@/pages/CounterpartiesPage";
+import { ProductsPage } from "@/pages/ProductsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 
 const router = createBrowserRouter([
@@ -12,6 +13,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: "transactions", element: <TransactionsPage /> },
+      { path: "products", element: <ProductsPage /> },
       { path: "counterparties", element: <CounterpartiesPage /> },
       { path: "settings", element: <SettingsPage /> },
     ],
