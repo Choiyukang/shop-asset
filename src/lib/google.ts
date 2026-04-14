@@ -94,6 +94,85 @@ export function parseSheetId(input: string): string {
   return trimmed;
 }
 
+const HEADER_ROW = ["날짜", "유형", "거래처", "분류", "상품내역", "수수료", "금액", "결제상태", "메모"];
+
+export async function ensureSheetHeader(target: SheetTarget): Promise<void> {
+  const token = await getAccessToken();
+  const tab = target.tab || "Transactions";
+  const range = `${encodeURIComponent(tab)}!A1:I1`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+    target.sheet_id,
+  )}/values/${range}`;
+
+  // 첫 행 읽기
+  const getResp = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (getResp.ok) {
+    const data = await getResp.json();
+    if (data.values && data.values.length > 0) return; // 이미 데이터 있음
+  }
+
+  // 빈 시트면 헤더 추가
+  const putResp = await fetch(`${url}?valueInputOption=RAW`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ values: [HEADER_ROW] }),
+  });
+  if (!putResp.ok) {
+    const text = await putResp.text().catch(() => "");
+    throw new Error(`헤더 추가 실패 (${putResp.status}): ${text}`);
+  }
+}
+
+export async function clearSheet(target: SheetTarget): Promise<void> {
+  const token = await getAccessToken();
+  const tab = target.tab || "Transactions";
+  const range = `${encodeURIComponent(tab)}!A:Z`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+    target.sheet_id,
+  )}/values/${range}:clear`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`시트 비우기 실패 (${resp.status}): ${text}`);
+  }
+}
+
+export async function readSheetRows(
+  target: SheetTarget,
+): Promise<string[][]> {
+  const token = await getAccessToken();
+  const tab = target.tab || "Transactions";
+  const range = `${encodeURIComponent(tab)}!A:I`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+    target.sheet_id,
+  )}/values/${range}`;
+  const resp = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`시트 읽기 실패 (${resp.status}): ${text}`);
+  }
+  const data = await resp.json();
+  const rows: string[][] = data.values ?? [];
+  // 첫 행이 헤더면 제외
+  if (rows.length > 0 && rows[0][0] === "날짜") {
+    return rows.slice(1);
+  }
+  return rows;
+}
+
 export async function appendTransactionRow(
   target: SheetTarget,
   row: TransactionRow,

@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/ui/field";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getCurrentUser, updateUser } from "@/lib/db";
+import { getCurrentUser, updateUser, resetSheetSync, syncAllTransactions, restoreFromSheet } from "@/lib/db";
 import type { TaxType, User } from "@/types";
 import {
   connectGoogle,
@@ -122,6 +122,8 @@ export function SettingsPage() {
     }
   }
 
+  const [syncProgress, setSyncProgress] = useState<string | null>(null);
+
   async function onSaveSheet(e: FormEvent) {
     e.preventDefault();
     setGoogleError(null);
@@ -129,19 +131,76 @@ export function SettingsPage() {
     setGoogleBusy(true);
     try {
       const id = parseSheetId(sheetInput);
+      const prevId = user?.google_sheet_id;
+      const prevTab = user?.google_sheet_tab;
+      const tab = sheetTab.trim() || "Transactions";
       await updateUser({
         google_sheet_id: id || null,
-        google_sheet_tab: sheetTab.trim() || "Transactions",
+        google_sheet_tab: tab,
       });
+      // 시트가 변경되면 동기화 상태 리셋
+      if (id && (prevId !== id || prevTab !== tab)) {
+        await resetSheetSync();
+      }
       const u = await getCurrentUser();
       if (u) {
         setUser(u);
         setSheetInput(u.google_sheet_id ?? "");
         setSheetTab(u.google_sheet_tab ?? "Transactions");
       }
-      setGoogleStatus("시트 설정이 저장되었습니다.");
+      const msg = id && (prevId !== id || prevTab !== tab)
+        ? "시트 설정이 저장되었습니다. 동기화 상태가 초기화되었습니다."
+        : "시트 설정이 저장되었습니다.";
+      setGoogleStatus(msg);
     } catch (err) {
       setGoogleError(err instanceof Error ? err.message : "저장에 실패했습니다.");
+    } finally {
+      setGoogleBusy(false);
+    }
+  }
+
+  async function onSyncAll() {
+    setGoogleError(null);
+    setGoogleStatus(null);
+    setGoogleBusy(true);
+    setSyncProgress("준비 중…");
+    try {
+      await resetSheetSync();
+      const result = await syncAllTransactions((done, total) => {
+        setSyncProgress(`${done} / ${total} 동기화 중…`);
+      });
+      setSyncProgress(null);
+      setGoogleStatus(
+        `전체 동기화 완료: 성공 ${result.success}건` +
+          (result.failed > 0 ? `, 실패 ${result.failed}건` : ""),
+      );
+    } catch (err) {
+      setSyncProgress(null);
+      const msg = err instanceof Error ? err.message : typeof err === "string" ? err : JSON.stringify(err);
+      setGoogleError(`동기화 실패: ${msg}`);
+    } finally {
+      setGoogleBusy(false);
+    }
+  }
+
+  async function onRestoreFromSheet() {
+    setGoogleError(null);
+    setGoogleStatus(null);
+    setGoogleBusy(true);
+    setSyncProgress("시트에서 읽는 중…");
+    try {
+      const result = await restoreFromSheet((done, total) => {
+        setSyncProgress(`${done} / ${total} 복원 중…`);
+      });
+      setSyncProgress(null);
+      setGoogleStatus(
+        `복원 완료: ${result.restored}건 복원` +
+          (result.skipped > 0 ? `, ${result.skipped}건 건너뜀 (중복 또는 오류)` : ""),
+      );
+    } catch (err) {
+      setSyncProgress(null);
+      const msg = err instanceof Error ? err.message : typeof err === "string" ? err : JSON.stringify(err);
+      setGoogleError(`복원 실패: ${msg}`);
     } finally {
       setGoogleBusy(false);
     }
@@ -279,7 +338,23 @@ export function SettingsPage() {
                         placeholder="Transactions"
                       />
                     </Field>
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={googleBusy || !user?.google_sheet_id}
+                        onClick={onRestoreFromSheet}
+                      >
+                        {syncProgress && syncProgress.includes("복원") ? syncProgress : "시트에서 복원"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={googleBusy || !user?.google_sheet_id}
+                        onClick={onSyncAll}
+                      >
+                        {syncProgress && !syncProgress.includes("복원") ? syncProgress : "전체 동기화"}
+                      </Button>
                       <Button type="submit" disabled={googleBusy}>
                         {googleBusy ? "저장 중…" : "시트 설정 저장"}
                       </Button>
