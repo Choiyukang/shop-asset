@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { Field } from "@/components/ui/field";
+import { DatePicker } from "@/components/ui/date-picker";
 import { formatKRW, todayISO } from "@/lib/utils";
 import { useTransactionStore } from "@/stores/useTransactionStore";
 import { useCounterpartyStore } from "@/stores/useCounterpartyStore";
@@ -566,10 +567,9 @@ export function TransactionsPage() {
           )}
           <div className="grid grid-cols-2 gap-3">
             <Field label="날짜" required>
-              <Input
-                type="date"
+              <DatePicker
                 value={form.date}
-                onChange={(e) => setForm({ ...form, date: e.target.value })}
+                onChange={(v) => setForm({ ...form, date: v })}
               />
             </Field>
             <Field label="타입" required>

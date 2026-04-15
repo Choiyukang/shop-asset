@@ -19,24 +19,33 @@ function parse(s: string): Date {
 
 export function DateRangePicker({ startDate, endDate, onChange }: Props) {
   const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<DateRange | undefined>();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
+    setDraft({ from: parse(startDate), to: parse(endDate) });
     function onDocClick(e: MouseEvent) {
       if (!ref.current?.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
-
-  const range: DateRange = { from: parse(startDate), to: parse(endDate) };
+  }, [open, startDate, endDate]);
 
   function handleSelect(r: DateRange | undefined) {
-    if (!r?.from) return;
-    const from = r.from;
-    const to = r.to ?? r.from;
-    onChange(toDateStr(from), toDateStr(to));
+    if (!r?.from) {
+      setDraft(undefined);
+      return;
+    }
+    if (r.from && r.to) {
+      const from = r.from <= r.to ? r.from : r.to;
+      const to = r.from <= r.to ? r.to : r.from;
+      setDraft({ from, to });
+      onChange(toDateStr(from), toDateStr(to));
+      setOpen(false);
+      return;
+    }
+    setDraft({ from: r.from, to: undefined });
   }
 
   return (
@@ -49,14 +58,18 @@ export function DateRangePicker({ startDate, endDate, onChange }: Props) {
         {startDate} ~ {endDate}
       </button>
       {open && (
-        <div className="absolute left-0 top-10 z-30 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg">
+        <div className="absolute right-0 top-10 z-30 w-max rounded-lg border border-neutral-200 bg-white p-3 shadow-lg">
           <DayPicker
             mode="range"
-            selected={range}
+            selected={draft}
             onSelect={handleSelect}
-            numberOfMonths={2}
+            numberOfMonths={1}
             locale={ko}
             showOutsideDays
+            weekStartsOn={0}
+            captionLayout="dropdown"
+            startMonth={new Date(2000, 0)}
+            endMonth={new Date(2100, 11)}
           />
         </div>
       )}

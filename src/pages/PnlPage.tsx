@@ -3,8 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/ui/field";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DateRangePicker } from "@/components/ui/date-range-picker";
-import { getMonthlyStats, getMonthlyStatsByRange } from "@/lib/db";
+import { getMonthlyStats } from "@/lib/db";
 import { formatKRW } from "@/lib/utils";
 import type { MonthlyStats } from "@/types";
 
@@ -13,23 +12,7 @@ const MONTH_OPTIONS = [
   { label: "최근 6개월", value: "6" },
   { label: "최근 12개월", value: "12" },
   { label: "직접 입력(개월)", value: "custom" },
-  { label: "날짜 선택", value: "range" },
 ];
-
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function today(): string {
-  return toDateStr(new Date());
-}
-
-function monthsAgo(n: number): string {
-  const d = new Date();
-  d.setMonth(d.getMonth() - n);
-  d.setDate(1);
-  return toDateStr(d);
-}
 
 function BarChart({ data }: { data: MonthlyStats[] }) {
   if (data.length === 0) return null;
@@ -150,11 +133,9 @@ function downloadCSV(content: string, filename: string) {
 }
 
 export function PnlPage() {
-  const [mode, setMode] = useState<"preset" | "custom" | "range">("preset");
+  const [mode, setMode] = useState<"preset" | "custom">("preset");
   const [months, setMonths] = useState(6);
   const [customMonths, setCustomMonths] = useState(6);
-  const [startDate, setStartDate] = useState(monthsAgo(5));
-  const [endDate, setEndDate] = useState(today());
   const [data, setData] = useState<MonthlyStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -162,15 +143,11 @@ export function PnlPage() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    const loader =
-      mode === "range"
-        ? getMonthlyStatsByRange(startDate, endDate)
-        : getMonthlyStats(months);
-    loader
+    getMonthlyStats(months)
       .then(setData)
       .catch((e) => setError(e instanceof Error ? e.message : "불러오기 실패"))
       .finally(() => setLoading(false));
-  }, [mode, months, startDate, endDate]);
+  }, [months]);
 
   const totalSales = data.reduce((s, d) => s + d.sales, 0);
   const totalExpense = data.reduce((s, d) => s + d.expense, 0);
@@ -193,8 +170,6 @@ export function PnlPage() {
                   if (v === "custom") {
                     setMode("custom");
                     setMonths(customMonths);
-                  } else if (v === "range") {
-                    setMode("range");
                   } else {
                     setMode("preset");
                     setMonths(Number(v));
@@ -224,18 +199,6 @@ export function PnlPage() {
                 />
               </Field>
             </div>
-          )}
-          {mode === "range" && (
-            <Field label="기간 선택">
-              <DateRangePicker
-                startDate={startDate}
-                endDate={endDate}
-                onChange={(s, e) => {
-                  setStartDate(s);
-                  setEndDate(e);
-                }}
-              />
-            </Field>
           )}
         </div>
       </div>
@@ -295,13 +258,7 @@ export function PnlPage() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => {
-                  const name =
-                    mode === "range"
-                      ? `손익리포트_${startDate}_${endDate}.csv`
-                      : `손익리포트_최근${months}개월.csv`;
-                  downloadCSV(toCSV(data), name);
-                }}
+                onClick={() => downloadCSV(toCSV(data), `손익리포트_최근${months}개월.csv`)}
               >
                 CSV 내보내기
               </Button>

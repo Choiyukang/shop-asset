@@ -7,6 +7,7 @@ import { formatKRW } from "@/lib/utils";
 import { useProductStore } from "@/stores/useProductStore";
 import { useCounterpartyStore } from "@/stores/useCounterpartyStore";
 import { Select } from "@/components/ui/select";
+import { DatePicker } from "@/components/ui/date-picker";
 import type { Product, ProductInput } from "@/types";
 
 const emptyForm: ProductInput = {
@@ -458,10 +459,9 @@ export function ProductsPage() {
               </Select>
             </Field>
             <Field label="사입날짜" hint="이 상품을 처음 사입한 날짜">
-              <Input
-                type="date"
+              <DatePicker
                 value={form.purchase_date ?? ""}
-                onChange={(e) => setForm({ ...form, purchase_date: e.target.value || null })}
+                onChange={(v) => setForm({ ...form, purchase_date: v || null })}
               />
             </Field>
             <div className="space-y-3">
@@ -480,10 +480,9 @@ export function ProductsPage() {
               </label>
               {form.is_pending_delivery && (
                 <Field label="입고 예정일">
-                  <Input
-                    type="date"
+                  <DatePicker
                     value={form.expected_arrival_date ?? ""}
-                    onChange={(e) => setForm({ ...form, expected_arrival_date: e.target.value || null })}
+                    onChange={(v) => setForm({ ...form, expected_arrival_date: v || null })}
                   />
                 </Field>
               )}
@@ -562,7 +561,7 @@ export function ProductsPage() {
               </Select>
             </Field>
             <Field label="사입날짜">
-              <Input type="date" value={createShared.purchase_date ?? ""} onChange={e => setCreateShared({...createShared, purchase_date: e.target.value || null})} />
+              <DatePicker value={createShared.purchase_date ?? ""} onChange={v => setCreateShared({...createShared, purchase_date: v || null})} />
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="사입가 (원)">

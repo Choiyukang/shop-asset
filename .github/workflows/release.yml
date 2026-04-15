@@ -16,8 +16,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest'
-            args: '--target universal-apple-darwin'
           - platform: 'windows-latest'
             args: ''
 
