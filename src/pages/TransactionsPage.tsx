@@ -9,7 +9,7 @@ import { useTransactionStore } from "@/stores/useTransactionStore";
 import { useCounterpartyStore } from "@/stores/useCounterpartyStore";
 import { useCategoryStore } from "@/stores/useCategoryStore";
 import { useProductStore } from "@/stores/useProductStore";
-import { getCurrentUser, syncTransactionToSheet, listTransactionTemplates, saveTransactionTemplate, deleteTransactionTemplate, createCounterparty } from "@/lib/db";
+import { getCurrentUser, syncTransactionToSheet, listTransactionTemplates, saveTransactionTemplate, deleteTransactionTemplate, createCounterparty, createProduct } from "@/lib/db";
 import type {
   PaymentStatus,
   TaxType,
@@ -25,8 +25,13 @@ const typeLabel: Record<TransactionType, string> = {
   expense: "지출",
 };
 
+interface ItemForm extends TransactionItemInput {
+  product_name: string;
+  product_color: string;
+}
+
 interface FormState extends Omit<TransactionInput, "items" | "commission_amount"> {
-  items: TransactionItemInput[];
+  items: ItemForm[];
   commission_amount: number;
   commission_overridden: boolean;
   counterparty_name: string;
@@ -202,50 +207,59 @@ export function TransactionsPage() {
   }
 
   function addItem() {
-    const first = productOptions[0];
-    const defaultPrice = first
-      ? form.type === "purchase"
-        ? first.purchase_price
-        : first.sale_price
-      : 0;
-    setForm((f) => {
-      const newForm = {
-        ...f,
-        items: [
-          ...f.items,
-          {
-            product_id: first?.id ?? "",
-            quantity: 1,
-            unit_price: defaultPrice,
-          },
-        ],
-      };
-      // Auto-fill counterparty from product if not set
-      if (!f.counterparty_id && first?.counterparty_id) {
-        return { ...newForm, counterparty_id: first.counterparty_id, commission_overridden: false };
-      }
-      return newForm;
-    });
+    setForm((f) => ({
+      ...f,
+      items: [
+        ...f.items,
+        { product_id: "", product_name: "", product_color: "", quantity: 1, unit_price: 0 },
+      ],
+    }));
   }
 
-  function updateItem(idx: number, patch: Partial<TransactionItemInput>) {
+  function updateItem(idx: number, patch: Partial<ItemForm>) {
     setForm((f) => {
       const next = [...f.items];
       const cur = next[idx]!;
       const merged = { ...cur, ...patch };
-      // If product changed, refresh unit_price default
-      if (patch.product_id && patch.product_id !== cur.product_id) {
-        const p = productMap.get(patch.product_id);
-        if (p) {
-          merged.unit_price =
-            f.type === "purchase" ? p.purchase_price : p.sale_price;
+
+      // 이름 변경 시 기존 상품 자동 매칭
+      if (patch.product_name !== undefined) {
+        const name = patch.product_name.trim().toLowerCase();
+        const matched = products.find(
+          (p) => p.name.trim().toLowerCase() === name &&
+            (!merged.product_color || (p.color ?? "").trim().toLowerCase() === merged.product_color.trim().toLowerCase())
+        );
+        if (matched) {
+          merged.product_id = matched.id;
+          if (!patch.unit_price) {
+            merged.unit_price = f.type === "purchase" ? matched.purchase_price : matched.sale_price;
+          }
+        } else {
+          merged.product_id = "";
         }
       }
+
+      // 컬러 변경 시 기존 상품 다시 매칭
+      if (patch.product_color !== undefined && merged.product_name) {
+        const name = merged.product_name.trim().toLowerCase();
+        const color = patch.product_color.trim().toLowerCase();
+        const matched = products.find(
+          (p) => p.name.trim().toLowerCase() === name && (p.color ?? "").trim().toLowerCase() === color
+        );
+        if (matched) {
+          merged.product_id = matched.id;
+          merged.unit_price = f.type === "purchase" ? matched.purchase_price : matched.sale_price;
+        } else {
+          merged.product_id = "";
+        }
+      }
+
       const newItems = [...f.items];
       newItems[idx] = merged;
-      // Auto-fill counterparty from new product if form counterparty_id is null
-      if (patch.product_id && !f.counterparty_id) {
-        const p = productMap.get(patch.product_id);
+
+      // 기존 상품의 거래처 자동 채우기
+      if (merged.product_id && !f.counterparty_name && !f.counterparty_id) {
+        const p = productMap.get(merged.product_id);
         if (p?.counterparty_id) {
           return { ...f, items: newItems, counterparty_id: p.counterparty_id, commission_overridden: false };
         }
@@ -275,8 +289,8 @@ export function TransactionsPage() {
         return;
       }
       for (const [i, it] of form.items.entries()) {
-        if (!it.product_id) {
-          setFormError(`${i + 1}번째 행: 상품을 선택해 주세요.`);
+        if (!it.product_id && !it.product_name.trim()) {
+          setFormError(`${i + 1}번째 행: 상품명을 입력해 주세요.`);
           return;
         }
         if (!Number.isFinite(it.quantity) || it.quantity <= 0) {
@@ -333,6 +347,29 @@ export function TransactionsPage() {
         }
       }
 
+      // 새 상품 자동 생성
+      const resolvedItems: TransactionItemInput[] = [];
+      for (const it of form.items) {
+        if (it.product_id) {
+          resolvedItems.push({ product_id: it.product_id, quantity: it.quantity, unit_price: it.unit_price });
+        } else if (it.product_name.trim()) {
+          const newPrd = await createProduct({
+            name: it.product_name.trim(),
+            color: it.product_color.trim() || null,
+            purchase_price: form.type === "purchase" ? it.unit_price : 0,
+            sale_price: form.type === "sale" ? it.unit_price : 0,
+            stock: 0,
+            memo: null,
+            counterparty_id: resolvedCpId,
+            purchase_date: null,
+            is_pending_delivery: false,
+            expected_arrival_date: null,
+          });
+          await loadProducts();
+          resolvedItems.push({ product_id: newPrd.id, quantity: it.quantity, unit_price: it.unit_price });
+        }
+      }
+
       const payload: TransactionInput = {
         date: form.date,
         type: form.type,
@@ -341,7 +378,7 @@ export function TransactionsPage() {
         amount: isItemized ? totalAmount : form.amount,
         memo: form.memo,
         payment_status: form.payment_status,
-        items: isItemized ? form.items : [],
+        items: isItemized ? resolvedItems : [],
         commission_amount: isItemized ? Math.trunc(form.commission_amount || 0) : 0,
       };
       await add(payload, taxType);
@@ -608,23 +645,31 @@ export function TransactionsPage() {
                       {form.items.map((it, idx) => {
                         const subtotal =
                           Math.trunc(it.quantity) * Math.trunc(it.unit_price);
+                        const isNew = !it.product_id && it.product_name.trim().length > 0;
                         return (
                           <tr key={idx} className="border-t border-neutral-100">
-                            <td className="px-2 py-1.5">
-                              <Select
-                                value={it.product_id}
-                                onChange={(e) =>
-                                  updateItem(idx, { product_id: e.target.value })
-                                }
-                              >
-                                <option value="">선택…</option>
+                            <td className="px-2 py-1.5 space-y-1">
+                              <input
+                                list={`prd-list-${idx}`}
+                                value={it.product_name}
+                                onChange={(e) => updateItem(idx, { product_name: e.target.value })}
+                                placeholder="상품명 입력"
+                                className={`w-full rounded border px-2 py-1 text-sm outline-none focus:border-neutral-400 ${isNew ? "border-blue-300 bg-blue-50" : "border-neutral-200 bg-white"}`}
+                              />
+                              <datalist id={`prd-list-${idx}`}>
                                 {productOptions.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.name}
-                                    {p.color ? ` (${p.color})` : ""} · 재고 {p.stock}
-                                  </option>
+                                  <option key={p.id} value={p.name} />
                                 ))}
-                              </Select>
+                              </datalist>
+                              <input
+                                value={it.product_color}
+                                onChange={(e) => updateItem(idx, { product_color: e.target.value })}
+                                placeholder="컬러 (선택)"
+                                className="w-full rounded border border-neutral-200 bg-white px-2 py-1 text-xs outline-none focus:border-neutral-400"
+                              />
+                              {isNew && (
+                                <span className="text-[10px] text-blue-500">새 상품으로 자동 등록</span>
+                              )}
                             </td>
                             <td className="px-2 py-1.5">
                               <Input
