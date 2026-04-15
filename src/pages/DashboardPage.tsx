@@ -8,6 +8,7 @@ import {
   getNextTaxDeadline,
   getOverdueReceivables,
   getLowStockProducts,
+  getPendingDeliveryProducts,
   getTodayUnpaidBySupplier,
 } from "@/lib/db";
 import type {
@@ -29,6 +30,7 @@ export function DashboardPage() {
   const [unpaid, setUnpaid] = useState<SupplierUnpaidTotal[]>([]);
   const [receivables, setReceivables] = useState<OverdueReceivable[]>([]);
   const [lowStock, setLowStock] = useState<Product[]>([]);
+  const [pendingDelivery, setPendingDelivery] = useState<Product[]>([]);
   const [taxDeadline, setTaxDeadline] = useState<TaxDeadlineInfo | null>(null);
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([]);
   const [salesGoal, setSalesGoal] = useState(0);
@@ -43,7 +45,7 @@ export function DashboardPage() {
     let canceled = false;
     (async () => {
       try {
-        const [s, u, r, ls, tax, ms, user] = await Promise.all([
+        const [s, u, r, ls, tax, ms, user, pd] = await Promise.all([
           getCurrentMonthSummary(year, month),
           getTodayUnpaidBySupplier(),
           getOverdueReceivables(),
@@ -51,6 +53,7 @@ export function DashboardPage() {
           getNextTaxDeadline(),
           getMonthlyStats(6),
           getCurrentUser(),
+          getPendingDeliveryProducts(),
         ]);
         if (!canceled) {
           setSummary(s);
@@ -60,6 +63,7 @@ export function DashboardPage() {
           setTaxDeadline(tax);
           setMonthlyStats(ms);
           if (user?.monthly_sales_goal) setSalesGoal(user.monthly_sales_goal);
+          setPendingDelivery(pd);
         }
       } catch (e) {
         if (!canceled)
@@ -284,6 +288,33 @@ export function DashboardPage() {
                   }`}
                 >
                   {p.stock === 0 ? "품절" : `${p.stock}개`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* 미송 현황 */}
+      <div className="rounded-lg border border-neutral-200 bg-white p-5">
+        <div className="mb-3">
+          <h2 className="text-base font-semibold text-neutral-900">미송 현황</h2>
+          <p className="text-xs text-neutral-500">주문 후 아직 입고 전인 상품</p>
+        </div>
+        {loading ? (
+          <p className="text-sm text-neutral-500">불러오는 중…</p>
+        ) : pendingDelivery.length === 0 ? (
+          <p className="text-sm text-neutral-500">미송 상품 없음</p>
+        ) : (
+          <ul className="divide-y divide-neutral-100">
+            {pendingDelivery.map((p) => (
+              <li key={p.id} className="flex items-center justify-between py-2 text-sm">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-neutral-800">{p.name}</span>
+                  {p.color && <span className="text-xs text-neutral-500">{p.color}</span>}
+                </div>
+                <span className="text-xs text-amber-600 font-medium">
+                  {p.expected_arrival_date ? `입고 예정 ${p.expected_arrival_date}` : "입고일 미정"}
                 </span>
               </li>
             ))}

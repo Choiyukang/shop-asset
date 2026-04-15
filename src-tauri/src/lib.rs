@@ -189,6 +189,12 @@ pub fn run() {
             sql: include_str!("../migrations/20260415000007_product_purchase_date.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 8,
+            description: "product pending delivery",
+            sql: include_str!("../migrations/20260415000008_product_pending_delivery.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

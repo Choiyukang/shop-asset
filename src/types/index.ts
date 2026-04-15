@@ -48,6 +48,8 @@ export interface Product {
   memo: string | null;
   counterparty_id: string | null;
   purchase_date: string | null;
+  is_pending_delivery: boolean;
+  expected_arrival_date: string | null;
   created_at: string;
 }
 
@@ -60,6 +62,8 @@ export interface ProductInput {
   memo: string | null;
   counterparty_id?: string | null;
   purchase_date?: string | null;
+  is_pending_delivery?: boolean;
+  expected_arrival_date?: string | null;
 }
 
 export interface TransactionItem {

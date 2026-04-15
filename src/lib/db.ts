@@ -44,6 +44,11 @@ function mapTransaction(r: RawTransaction): Transaction {
   return { ...r, synced_to_sheet: !!r.synced_to_sheet };
 }
 
+type RawProduct = Omit<Product, "is_pending_delivery"> & { is_pending_delivery: number };
+function mapProduct(r: RawProduct): Product {
+  return { ...r, is_pending_delivery: !!r.is_pending_delivery };
+}
+
 // ---------- User ----------
 export async function getCurrentUser(): Promise<User | null> {
   const db = await getDb();
@@ -121,17 +126,18 @@ export async function listCategories(): Promise<Category[]> {
 // ---------- Product ----------
 export async function listProducts(): Promise<Product[]> {
   const db = await getDb();
-  return db.select<Product[]>(
+  const rows = await db.select<RawProduct[]>(
     "SELECT * FROM products ORDER BY created_at DESC",
   );
+  return rows.map(mapProduct);
 }
 
 export async function createProduct(input: ProductInput): Promise<Product> {
   const db = await getDb();
   const id = uuid("prd");
   await db.execute(
-    `INSERT INTO products (id, name, color, purchase_price, sale_price, stock, memo, counterparty_id, purchase_date)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, color, purchase_price, sale_price, stock, memo, counterparty_id, purchase_date, is_pending_delivery, expected_arrival_date)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.name,
@@ -142,13 +148,15 @@ export async function createProduct(input: ProductInput): Promise<Product> {
       input.memo,
       input.counterparty_id ?? null,
       input.purchase_date ?? null,
+      input.is_pending_delivery ? 1 : 0,
+      input.expected_arrival_date ?? null,
     ],
   );
-  const rows = await db.select<Product[]>(
+  const rows = await db.select<RawProduct[]>(
     "SELECT * FROM products WHERE id = ?",
     [id],
   );
-  return rows[0]!;
+  return mapProduct(rows[0]!);
 }
 
 export async function updateProduct(
@@ -711,10 +719,19 @@ export async function getOverdueReceivables(): Promise<OverdueReceivable[]> {
 
 export async function getLowStockProducts(threshold = 5): Promise<Product[]> {
   const db = await getDb();
-  return db.select<Product[]>(
+  const rows = await db.select<RawProduct[]>(
     "SELECT * FROM products WHERE stock <= ? ORDER BY stock ASC",
     [threshold],
   );
+  return rows.map(mapProduct);
+}
+
+export async function getPendingDeliveryProducts(): Promise<Product[]> {
+  const db = await getDb();
+  const rows = await db.select<RawProduct[]>(
+    "SELECT * FROM products WHERE is_pending_delivery = 1 ORDER BY expected_arrival_date ASC",
+  );
+  return rows.map(mapProduct);
 }
 
 export async function getNextTaxDeadline(): Promise<TaxDeadlineInfo> {

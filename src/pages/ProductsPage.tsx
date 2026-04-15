@@ -18,6 +18,8 @@ const emptyForm: ProductInput = {
   memo: "",
   counterparty_id: null,
   purchase_date: null,
+  is_pending_delivery: false,
+  expected_arrival_date: null,
 };
 
 export function ProductsPage() {
@@ -54,6 +56,8 @@ export function ProductsPage() {
       memo: p.memo ?? "",
       counterparty_id: p.counterparty_id ?? null,
       purchase_date: p.purchase_date ?? null,
+      is_pending_delivery: p.is_pending_delivery ?? false,
+      expected_arrival_date: p.expected_arrival_date ?? null,
     });
     setFormError(null);
     setOpen(true);
@@ -77,6 +81,8 @@ export function ProductsPage() {
         memo: form.memo?.trim() || null,
         counterparty_id: form.counterparty_id ?? null,
         purchase_date: form.purchase_date ?? null,
+        is_pending_delivery: form.is_pending_delivery ?? false,
+        expected_arrival_date: form.expected_arrival_date ?? null,
       };
       if (editingId) {
         await update(editingId, payload);
@@ -166,7 +172,19 @@ export function ProductsPage() {
             )}
             {products.map((p) => (
               <tr key={p.id} className="border-b border-neutral-100 last:border-b-0">
-                <td className="px-4 py-3 font-medium text-neutral-900">{p.name}</td>
+                <td className="px-4 py-3 font-medium text-neutral-900">
+                  <div className="flex items-center gap-1.5">
+                    {p.name}
+                    {p.is_pending_delivery && (
+                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                        미송
+                      </span>
+                    )}
+                  </div>
+                  {p.is_pending_delivery && p.expected_arrival_date && (
+                    <div className="text-xs text-amber-600">입고 예정 {p.expected_arrival_date}</div>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-neutral-500 text-sm">
                   {counterparties.find(c => c.id === p.counterparty_id)?.name ?? "—"}
                 </td>
@@ -266,6 +284,30 @@ export function ProductsPage() {
               onChange={(e) => setForm({ ...form, purchase_date: e.target.value || null })}
             />
           </Field>
+          <div className="space-y-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.is_pending_delivery ?? false}
+                onChange={(e) => setForm({
+                  ...form,
+                  is_pending_delivery: e.target.checked,
+                  expected_arrival_date: e.target.checked ? form.expected_arrival_date : null,
+                })}
+                className="h-4 w-4 rounded border-neutral-300"
+              />
+              <span className="text-sm font-medium text-neutral-700">미송 (주문했지만 아직 미입고)</span>
+            </label>
+            {form.is_pending_delivery && (
+              <Field label="입고 예정일">
+                <Input
+                  type="date"
+                  value={form.expected_arrival_date ?? ""}
+                  onChange={(e) => setForm({ ...form, expected_arrival_date: e.target.value || null })}
+                />
+              </Field>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="사입가 (원)">
               <Input
