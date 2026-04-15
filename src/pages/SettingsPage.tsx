@@ -278,7 +278,7 @@ export function SettingsPage() {
           {loading ? (
             <div className="text-sm text-neutral-500">불러오는 중…</div>
           ) : (
-            <form onSubmit={onSubmit} className="max-w-md space-y-4">
+            <form onSubmit={onSubmit} className="max-w-2xl space-y-4">
               <Field label="이름" required>
                 <Input value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
@@ -334,7 +334,7 @@ export function SettingsPage() {
               </p>
             </div>
           ) : (
-            <div className="max-w-md space-y-4">
+            <div className="max-w-2xl space-y-4">
               {googleError && (
                 <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
                   {googleError}
@@ -433,7 +433,7 @@ export function SettingsPage() {
           <CardTitle>텔레그램 봇 연동</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="max-w-md space-y-4">
+          <div className="max-w-2xl space-y-4">
             <p className="text-sm text-neutral-600">
               봇 토큰을 저장하면 앱이 실행 중일 때 텔레그램에서 매출·미수금·재고를 조회할 수 있습니다.
             </p>
