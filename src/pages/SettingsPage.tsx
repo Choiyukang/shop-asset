@@ -140,6 +140,7 @@ export function SettingsPage() {
   const [botStatus, setBotStatus] = useState<string | null>(null);
   const [botError, setBotError] = useState<string | null>(null);
   const [botActive, setBotActive] = useState(false);
+  const [botEditing, setBotEditing] = useState(false);
 
   async function onSaveSheet(e: FormEvent) {
     e.preventDefault();
@@ -231,6 +232,7 @@ export function SettingsPage() {
     try {
       await invoke("bot_set_token", { token: botToken.trim() });
       setBotActive(!!botToken.trim());
+      setBotEditing(false);
       setBotStatus(botToken.trim() ? "봇이 시작되었습니다." : "봇 연결이 해제되었습니다.");
     } catch (err) {
       setBotError(err instanceof Error ? err.message : "봇 설정 저장에 실패했습니다.");
@@ -344,73 +346,84 @@ export function SettingsPage() {
                 </div>
               )}
 
-              {!googleConnected ? (
-                <div className="space-y-2">
-                  <p className="text-sm text-neutral-600">
-                    구글 계정에 연결하면 거래 저장 시 자동으로 구글시트에 기록됩니다.
-                  </p>
-                  <Button onClick={onConnectGoogle} disabled={googleBusy}>
-                    {googleBusy ? "연결 중…" : "구글 계정 연결"}
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm">
-                    <div>
-                      <div className="text-xs text-neutral-500">연결된 계정</div>
+              {/* 계정 연결 상태 */}
+              <div className="flex items-center justify-between rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm">
+                <div>
+                  {googleConnected ? (
+                    <>
+                      <div className="text-xs text-emerald-600 mb-0.5">● 연결됨</div>
                       <div className="font-medium text-neutral-800">
                         {googleEmail || "(이메일 정보 없음)"}
                       </div>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={onDisconnectGoogle}
-                      disabled={googleBusy}
-                    >
-                      연결 해제
-                    </Button>
-                  </div>
-
-                  <form onSubmit={onSaveSheet} className="space-y-3">
-                    <Field label="Sheet ID 또는 URL" required>
-                      <Input
-                        value={sheetInput}
-                        onChange={(e) => setSheetInput(e.target.value)}
-                        placeholder="https://docs.google.com/spreadsheets/d/... 또는 ID"
-                      />
-                    </Field>
-                    <Field label="탭 이름" required>
-                      <Input
-                        value={sheetTab}
-                        onChange={(e) => setSheetTab(e.target.value)}
-                        placeholder="Transactions"
-                      />
-                    </Field>
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={googleBusy || !user?.google_sheet_id}
-                        onClick={onRestoreFromSheet}
-                      >
-                        {syncProgress && syncProgress.includes("복원") ? syncProgress : "시트에서 복원"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={googleBusy || !user?.google_sheet_id}
-                        onClick={onSyncAll}
-                      >
-                        {syncProgress && !syncProgress.includes("복원") ? syncProgress : "전체 동기화"}
-                      </Button>
-                      <Button type="submit" disabled={googleBusy}>
-                        {googleBusy ? "저장 중…" : "시트 설정 저장"}
-                      </Button>
-                    </div>
-                  </form>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-xs text-neutral-500 mb-0.5">연결 안 됨</div>
+                      <div className="text-xs text-neutral-500">
+                        연결하면 거래 저장 시 자동으로 구글시트에 기록됩니다.
+                      </div>
+                    </>
+                  )}
                 </div>
-              )}
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    onClick={onConnectGoogle}
+                    disabled={googleBusy || googleConnected}
+                  >
+                    {googleBusy && !googleConnected ? "연결 중…" : "구글 계정 연결"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={onDisconnectGoogle}
+                    disabled={googleBusy || !googleConnected}
+                  >
+                    연결 해제
+                  </Button>
+                </div>
+              </div>
+
+              {/* 시트 설정 — 연결 시에만 활성화 */}
+              <form onSubmit={onSaveSheet} className="space-y-3">
+                <Field label="Sheet ID 또는 URL" required>
+                  <Input
+                    value={sheetInput}
+                    onChange={(e) => setSheetInput(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/... 또는 ID"
+                    disabled={!googleConnected}
+                  />
+                </Field>
+                <Field label="탭 이름" required>
+                  <Input
+                    value={sheetTab}
+                    onChange={(e) => setSheetTab(e.target.value)}
+                    placeholder="Transactions"
+                    disabled={!googleConnected}
+                  />
+                </Field>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={googleBusy || !googleConnected || !user?.google_sheet_id}
+                    onClick={onRestoreFromSheet}
+                  >
+                    {syncProgress && syncProgress.includes("복원") ? syncProgress : "시트에서 복원"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={googleBusy || !googleConnected || !user?.google_sheet_id}
+                    onClick={onSyncAll}
+                  >
+                    {syncProgress && !syncProgress.includes("복원") ? syncProgress : "전체 동기화"}
+                  </Button>
+                  <Button type="submit" disabled={googleBusy || !googleConnected}>
+                    {googleBusy ? "저장 중…" : "시트 설정 저장"}
+                  </Button>
+                </div>
+              </form>
             </div>
           )}
         </CardContent>
@@ -440,30 +453,66 @@ export function SettingsPage() {
               </div>
             )}
 
-            {botActive && (
-              <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
-                <span className="text-emerald-700">● 봇 실행 중</span>
-                <Button type="button" variant="secondary" onClick={onClearBotToken} disabled={botSaving}>
-                  연결 해제
-                </Button>
+            {/* 저장된 상태 — 읽기 전용 */}
+            {botActive && !botEditing ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+                  <div>
+                    <div className="text-xs text-emerald-600 mb-0.5">봇 실행 중</div>
+                    <span className="font-mono text-neutral-700 tracking-widest text-xs">
+                      {botToken.slice(0, 10)}●●●●●●●●●●●●●●●
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => { setBotEditing(true); setBotStatus(null); }}
+                    >
+                      수정
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={onClearBotToken}
+                      disabled={botSaving}
+                    >
+                      연결 해제
+                    </Button>
+                  </div>
+                </div>
               </div>
+            ) : (
+              /* 편집 상태 */
+              <form onSubmit={onSaveBotToken} className="space-y-3">
+                <Field label="봇 토큰" hint="BotFather에서 발급: @BotFather → /newbot">
+                  <Input
+                    type="password"
+                    value={botToken}
+                    onChange={(e) => setBotToken(e.target.value)}
+                    placeholder="123456789:ABC..."
+                    autoFocus={botEditing}
+                  />
+                </Field>
+                <div className="flex justify-end gap-2">
+                  {botEditing && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => { setBotEditing(false); setBotStatus(null); setBotError(null); }}
+                      disabled={botSaving}
+                    >
+                      취소
+                    </Button>
+                  )}
+                  <Button type="submit" disabled={botSaving || !botToken.trim()}>
+                    {botSaving ? "저장 중…" : "저장 및 시작"}
+                  </Button>
+                </div>
+              </form>
             )}
-
-            <form onSubmit={onSaveBotToken} className="space-y-3">
-              <Field label="봇 토큰" hint="BotFather에서 발급: @BotFather → /newbot">
-                <Input
-                  type="password"
-                  value={botToken}
-                  onChange={(e) => setBotToken(e.target.value)}
-                  placeholder="123456789:ABC..."
-                />
-              </Field>
-              <div className="flex justify-end">
-                <Button type="submit" disabled={botSaving || !botToken.trim()}>
-                  {botSaving ? "저장 중…" : "저장 및 시작"}
-                </Button>
-              </div>
-            </form>
           </div>
         </CardContent>
       </Card>
