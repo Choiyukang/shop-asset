@@ -131,6 +131,7 @@ git push origin main --tags
 - 진행 상황: [Actions 탭](https://github.com/Choiyukang/shop-asset/actions)
 - 빌드 소요 시간: macOS 8~12분, Windows 10~15분
 - 완료 후 [Releases 페이지](https://github.com/Choiyukang/shop-asset/releases)에서 Draft 검토 → **Publish**
+- Publish 즉시 이미 설치된 앱에서 다음 실행 시 **자동 업데이트 알림** 표시
 
 ---
 
@@ -169,10 +170,13 @@ shop-asset/
 - ✅ **v0.2.0** — 부가세 신고 페이지(CSV), 텔레그램 봇, 설정 UX 개선, 화면 확대
 - ✅ **v0.2.1** — OS 알림, 월별 손익 리포트, 거래처 외상 장부, JSON 백업/복원
 - ✅ **v0.2.2** — 상품 마진 분석, 거래 템플릿, 거래처 정산서, 상품 기본 거래처·사입날짜·미송 관리, 대시보드 2열 레이아웃
+- ✅ **v0.2.4** — 자동 업데이트 기능 (GitHub Releases 기반 서명 검증)
 - ⚪ **v0.3** — 영수증 이미지 첨부, PDF 리포트, 드라이브 자동 백업
 
 ---
 
 ## 라이선스
 
-Private. 외부 배포 전 라이선스 정책을 명시하세요.
+Copyright (c) 2026 Choiyukang. All rights reserved.
+
+무단 복사, 수정, 배포, 사용을 금지합니다.
