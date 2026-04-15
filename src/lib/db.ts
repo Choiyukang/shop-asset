@@ -1,4 +1,4 @@
-import Database from "@tauri-apps/plugin-sql";
+import { supabase } from "@/lib/supabase";
 import type {
   Category,
   Counterparty,
@@ -22,252 +22,206 @@ import { splitVat } from "@/lib/tax";
 import { uuid } from "@/lib/utils";
 import { appendTransactionRow, ensureSheetHeader, readSheetRows, getSheetTabs, writeTabRows } from "@/lib/google";
 
-let dbPromise: Promise<Database> | null = null;
-
-function getDb(): Promise<Database> {
-  if (!dbPromise) {
-    dbPromise = Database.load("sqlite:mallbook.db");
-  }
-  return dbPromise;
+function throwIf(error: { message: string } | null, context?: string): void {
+  if (error) throw new Error(context ? `${context}: ${error.message}` : error.message);
 }
 
-type RawCategory = Omit<Category, "tax_deductible"> & { tax_deductible: number };
-type RawTransaction = Omit<Transaction, "synced_to_sheet" | "items"> & {
-  synced_to_sheet: number;
-};
-
-function mapCategory(r: RawCategory): Category {
-  return { ...r, tax_deductible: !!r.tax_deductible };
+function mapCategory(r: Record<string, unknown>): Category {
+  return { ...(r as unknown as Category), tax_deductible: !!r.tax_deductible };
 }
 
-function mapTransaction(r: RawTransaction): Transaction {
-  return { ...r, synced_to_sheet: !!r.synced_to_sheet };
+function mapTransaction(r: Record<string, unknown>): Transaction {
+  return { ...(r as unknown as Transaction), synced_to_sheet: !!r.synced_to_sheet };
 }
 
-type RawProduct = Omit<Product, "is_pending_delivery"> & { is_pending_delivery: number };
-function mapProduct(r: RawProduct): Product {
-  return { ...r, is_pending_delivery: !!r.is_pending_delivery };
+function mapProduct(r: Record<string, unknown>): Product {
+  return { ...(r as unknown as Product), is_pending_delivery: !!r.is_pending_delivery };
 }
 
 // ---------- User ----------
 export async function getCurrentUser(): Promise<User | null> {
-  const db = await getDb();
-  const rows = await db.select<User[]>(
-    "SELECT * FROM users ORDER BY created_at ASC LIMIT 1",
-  );
-  return rows[0] ?? null;
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .order("created_at", { ascending: true })
+    .limit(1);
+  throwIf(error);
+  return (data?.[0] as User) ?? null;
 }
 
 export async function updateUser(patch: Partial<Omit<User, "id" | "created_at">>): Promise<void> {
-  const db = await getDb();
   const user = await getCurrentUser();
   if (!user) throw new Error("기본 사용자 정보를 찾을 수 없습니다.");
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  for (const [k, v] of Object.entries(patch)) {
-    fields.push(`${k} = ?`);
-    values.push(v);
-  }
-  if (fields.length === 0) return;
-  values.push(user.id);
-  await db.execute(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`, values);
+  if (Object.keys(patch).length === 0) return;
+  const { error } = await supabase.from("users").update(patch).eq("id", user.id);
+  throwIf(error);
 }
 
 // ---------- Counterparty ----------
 export async function listCounterparties(): Promise<Counterparty[]> {
-  const db = await getDb();
-  return db.select<Counterparty[]>(
-    "SELECT * FROM counterparties WHERE is_deleted = 0 OR is_deleted IS NULL ORDER BY created_at DESC",
-  );
+  const { data, error } = await supabase
+    .from("counterparties")
+    .select("*")
+    .eq("is_deleted", 0)
+    .order("created_at", { ascending: false });
+  throwIf(error);
+  return (data ?? []) as Counterparty[];
 }
 
 export async function createCounterparty(input: CounterpartyInput): Promise<Counterparty> {
-  const db = await getDb();
   const id = uuid("cp");
-  await db.execute(
-    "INSERT INTO counterparties (id, name, type, phone, commission_rate) VALUES (?, ?, ?, ?, ?)",
-    [id, input.name, input.type, input.phone, input.commission_rate ?? 0],
-  );
-  const rows = await db.select<Counterparty[]>(
-    "SELECT * FROM counterparties WHERE id = ?",
-    [id],
-  );
-  return rows[0]!;
+  const { error } = await supabase.from("counterparties").insert({
+    id,
+    name: input.name,
+    type: input.type,
+    phone: input.phone,
+    commission_rate: input.commission_rate ?? 0,
+    is_deleted: 0,
+  });
+  throwIf(error);
+  const { data, error: selErr } = await supabase
+    .from("counterparties")
+    .select("*")
+    .eq("id", id)
+    .limit(1);
+  throwIf(selErr);
+  return (data?.[0] as Counterparty)!;
 }
 
 export async function updateCounterparty(
   id: string,
   patch: Partial<Omit<Counterparty, "id" | "created_at">>,
 ): Promise<void> {
-  const db = await getDb();
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  for (const [k, v] of Object.entries(patch)) {
-    fields.push(`${k} = ?`);
-    values.push(v);
-  }
-  if (fields.length === 0) return;
-  values.push(id);
-  await db.execute(
-    `UPDATE counterparties SET ${fields.join(", ")} WHERE id = ?`,
-    values,
-  );
+  if (Object.keys(patch).length === 0) return;
+  const { error } = await supabase.from("counterparties").update(patch).eq("id", id);
+  throwIf(error);
 }
 
 export async function deleteCounterparty(id: string): Promise<void> {
-  const db = await getDb();
-  // 소프트 삭제: 거래내역에서 거래처명이 유지되도록 is_deleted만 1로 설정
-  await db.execute("UPDATE counterparties SET is_deleted = 1 WHERE id = ?", [id]);
+  const { error } = await supabase.from("counterparties").update({ is_deleted: 1 }).eq("id", id);
+  throwIf(error);
 }
 
 // ---------- Category ----------
 export async function listCategories(): Promise<Category[]> {
-  const db = await getDb();
-  const rows = await db.select<RawCategory[]>(
-    "SELECT * FROM categories ORDER BY name ASC",
-  );
-  return rows.map(mapCategory);
+  const { data, error } = await supabase
+    .from("categories")
+    .select("*")
+    .order("name", { ascending: true });
+  throwIf(error);
+  return (data ?? []).map((r) => mapCategory(r as Record<string, unknown>));
 }
 
 // ---------- Product ----------
 export async function listProducts(): Promise<Product[]> {
-  const db = await getDb();
-  const rows = await db.select<RawProduct[]>(
-    "SELECT * FROM products WHERE is_deleted = 0 OR is_deleted IS NULL ORDER BY created_at DESC",
-  );
-  return rows.map(mapProduct);
+  const { data, error } = await supabase
+    .from("products")
+    .select("*")
+    .eq("is_deleted", 0)
+    .order("created_at", { ascending: false });
+  throwIf(error);
+  return (data ?? []).map((r) => mapProduct(r as Record<string, unknown>));
 }
 
 export async function createProduct(input: ProductInput): Promise<Product> {
-  const db = await getDb();
   const id = uuid("prd");
-  await db.execute(
-    `INSERT INTO products (id, name, color, purchase_price, sale_price, stock, memo, counterparty_id, purchase_date, is_pending_delivery, expected_arrival_date)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      input.name,
-      input.color,
-      Math.trunc(input.purchase_price),
-      Math.trunc(input.sale_price),
-      Math.trunc(input.stock),
-      input.memo,
-      input.counterparty_id ?? null,
-      input.purchase_date ?? null,
-      input.is_pending_delivery ? 1 : 0,
-      input.expected_arrival_date ?? null,
-    ],
-  );
-  const rows = await db.select<RawProduct[]>(
-    "SELECT * FROM products WHERE id = ?",
-    [id],
-  );
-  return mapProduct(rows[0]!);
+  const { error } = await supabase.from("products").insert({
+    id,
+    name: input.name,
+    color: input.color,
+    purchase_price: Math.trunc(input.purchase_price),
+    sale_price: Math.trunc(input.sale_price),
+    stock: Math.trunc(input.stock),
+    memo: input.memo,
+    counterparty_id: input.counterparty_id ?? null,
+    purchase_date: input.purchase_date ?? null,
+    is_pending_delivery: input.is_pending_delivery ? 1 : 0,
+    expected_arrival_date: input.expected_arrival_date ?? null,
+    is_deleted: 0,
+  });
+  throwIf(error);
+  const { data, error: selErr } = await supabase
+    .from("products")
+    .select("*")
+    .eq("id", id)
+    .limit(1);
+  throwIf(selErr);
+  return mapProduct((data?.[0] ?? {}) as Record<string, unknown>);
 }
 
 export async function updateProduct(
   id: string,
   patch: Partial<Omit<Product, "id" | "created_at">>,
 ): Promise<void> {
-  const db = await getDb();
-  const fields: string[] = [];
-  const values: unknown[] = [];
+  if (Object.keys(patch).length === 0) return;
+  const normalized: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(patch)) {
-    fields.push(`${k} = ?`);
-    // SQLite stores booleans as integers; convert explicitly
-    values.push(k === "is_pending_delivery" ? (v ? 1 : 0) : v);
+    normalized[k] = k === "is_pending_delivery" ? (v ? 1 : 0) : v;
   }
-  if (fields.length === 0) return;
-  values.push(id);
-  await db.execute(
-    `UPDATE products SET ${fields.join(", ")} WHERE id = ?`,
-    values,
-  );
+  const { error } = await supabase.from("products").update(normalized).eq("id", id);
+  throwIf(error);
 }
 
 export async function deleteProduct(id: string): Promise<void> {
-  const db = await getDb();
-  // 소프트 삭제: 거래내역에서 상품명이 유지되도록 is_deleted만 1로 설정
-  await db.execute("UPDATE products SET is_deleted = 1 WHERE id = ?", [id]);
+  const { error } = await supabase.from("products").update({ is_deleted: 1 }).eq("id", id);
+  throwIf(error);
 }
 
 // ---------- Transaction Items ----------
 export async function listTransactionItems(
   transactionId: string,
 ): Promise<TransactionItem[]> {
-  const db = await getDb();
-  const rows = await db.select<
-    {
-      id: string;
-      transaction_id: string;
-      product_id: string;
-      quantity: number;
-      unit_price: number;
-      product_name: string | null;
-      product_color: string | null;
-    }[]
-  >(
-    `SELECT ti.id, ti.transaction_id, ti.product_id, ti.quantity, ti.unit_price,
-            p.name AS product_name, p.color AS product_color
-       FROM transaction_items ti
-       LEFT JOIN products p ON p.id = ti.product_id
-      WHERE ti.transaction_id = ?`,
-    [transactionId],
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    transaction_id: r.transaction_id,
-    product_id: r.product_id,
-    quantity: r.quantity,
-    unit_price: r.unit_price,
-    product_name: r.product_name ?? undefined,
-    product_color: r.product_color,
-  }));
+  const { data, error } = await supabase
+    .from("transaction_items")
+    .select("*, products(name, color)")
+    .eq("transaction_id", transactionId);
+  throwIf(error);
+  return (data ?? []).map((r: Record<string, unknown>) => {
+    const product = r.products as { name?: string | null; color?: string | null } | null;
+    return {
+      id: r.id as string,
+      transaction_id: r.transaction_id as string,
+      product_id: r.product_id as string,
+      quantity: r.quantity as number,
+      unit_price: r.unit_price as number,
+      product_name: product?.name ?? undefined,
+      product_color: product?.color ?? null,
+    };
+  });
 }
 
 // ---------- Transaction ----------
 export async function listTransactions(): Promise<Transaction[]> {
-  const db = await getDb();
-  const rows = await db.select<RawTransaction[]>(
-    "SELECT * FROM transactions ORDER BY date DESC, created_at DESC",
-  );
-  const txns = rows.map(mapTransaction);
-  // Best-effort: attach items for purchase/sale transactions in one query.
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("*")
+    .order("date", { ascending: false })
+    .order("created_at", { ascending: false });
+  throwIf(error);
+  const txns = (data ?? []).map((r) => mapTransaction(r as Record<string, unknown>));
   if (txns.length === 0) return txns;
   const ids = txns.filter((t) => t.type !== "expense").map((t) => t.id);
   if (ids.length === 0) return txns;
-  const placeholders = ids.map(() => "?").join(",");
-  const itemRows = await db.select<
-    {
-      id: string;
-      transaction_id: string;
-      product_id: string;
-      quantity: number;
-      unit_price: number;
-      product_name: string | null;
-      product_color: string | null;
-    }[]
-  >(
-    `SELECT ti.id, ti.transaction_id, ti.product_id, ti.quantity, ti.unit_price,
-            p.name AS product_name, p.color AS product_color
-       FROM transaction_items ti
-       LEFT JOIN products p ON p.id = ti.product_id
-      WHERE ti.transaction_id IN (${placeholders})`,
-    ids,
-  );
+  const { data: itemData, error: itemErr } = await supabase
+    .from("transaction_items")
+    .select("*, products(name, color)")
+    .in("transaction_id", ids);
+  throwIf(itemErr);
   const grouped = new Map<string, TransactionItem[]>();
-  for (const r of itemRows) {
-    const list = grouped.get(r.transaction_id) ?? [];
+  for (const r of (itemData ?? []) as Record<string, unknown>[]) {
+    const product = r.products as { name?: string | null; color?: string | null } | null;
+    const txnId = r.transaction_id as string;
+    const list = grouped.get(txnId) ?? [];
     list.push({
-      id: r.id,
-      transaction_id: r.transaction_id,
-      product_id: r.product_id,
-      quantity: r.quantity,
-      unit_price: r.unit_price,
-      product_name: r.product_name ?? undefined,
-      product_color: r.product_color,
+      id: r.id as string,
+      transaction_id: txnId,
+      product_id: r.product_id as string,
+      quantity: r.quantity as number,
+      unit_price: r.unit_price as number,
+      product_name: product?.name ?? undefined,
+      product_color: product?.color ?? null,
     });
-    grouped.set(r.transaction_id, list);
+    grouped.set(txnId, list);
   }
   for (const t of txns) {
     if (t.type !== "expense") t.items = grouped.get(t.id) ?? [];
@@ -279,7 +233,6 @@ export async function createTransaction(
   input: TransactionInput,
   taxType: TaxType,
 ): Promise<Transaction> {
-  const db = await getDb();
   const txnId = uuid("txn");
   const insertedItemIds: string[] = [];
   const stockDeltas: { productId: string; delta: number }[] = [];
@@ -299,87 +252,105 @@ export async function createTransaction(
     amount = itemsTotal + commission;
   }
 
-  // tauri-plugin-sql lacks a clean BEGIN/COMMIT across select/execute,
-  // so we use try/catch with manual rollback for inserted rows.
   try {
-    await db.execute(
-      `INSERT INTO transactions
-        (id, date, type, amount, counterparty_id, category_id, memo, payment_status, synced_to_sheet, commission_amount)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-      [
-        txnId,
-        input.date,
-        input.type,
-        amount,
-        input.counterparty_id,
-        input.category_id,
-        input.memo,
-        input.payment_status,
-        commission,
-      ],
-    );
+    const { error: txnErr } = await supabase.from("transactions").insert({
+      id: txnId,
+      date: input.date,
+      type: input.type,
+      amount,
+      counterparty_id: input.counterparty_id,
+      category_id: input.category_id,
+      memo: input.memo,
+      payment_status: input.payment_status,
+      synced_to_sheet: 0,
+      commission_amount: commission,
+    });
+    throwIf(txnErr);
 
     if (isItemized) {
       for (const it of input.items) {
         const itemId = uuid("ti");
         const qty = Math.trunc(it.quantity);
         const price = Math.trunc(it.unit_price);
-        await db.execute(
-          `INSERT INTO transaction_items (id, transaction_id, product_id, quantity, unit_price)
-           VALUES (?, ?, ?, ?, ?)`,
-          [itemId, txnId, it.product_id, qty, price],
-        );
+        const { error: itemErr } = await supabase.from("transaction_items").insert({
+          id: itemId,
+          transaction_id: txnId,
+          product_id: it.product_id,
+          quantity: qty,
+          unit_price: price,
+        });
+        throwIf(itemErr);
         insertedItemIds.push(itemId);
         const delta = input.type === "purchase" ? qty : -qty;
-        await db.execute(
-          "UPDATE products SET stock = stock + ? WHERE id = ?",
-          [delta, it.product_id],
-        );
+        // Fetch current stock, apply delta, update
+        const { data: prodRows, error: prodErr } = await supabase
+          .from("products")
+          .select("stock")
+          .eq("id", it.product_id)
+          .limit(1);
+        throwIf(prodErr);
+        const currentStock = Number((prodRows?.[0] as { stock?: number } | undefined)?.stock ?? 0);
+        const { error: updErr } = await supabase
+          .from("products")
+          .update({ stock: currentStock + delta })
+          .eq("id", it.product_id);
+        throwIf(updErr);
         stockDeltas.push({ productId: it.product_id, delta });
       }
     }
 
     // Auto-create TaxRecord
     const { supply_amount, vat_amount } = splitVat(amount, taxType);
-    const categories = await db.select<RawCategory[]>(
-      "SELECT * FROM categories WHERE id = ?",
-      [input.category_id],
-    );
-    const cat = categories[0];
+    const { data: catRows, error: catErr } = await supabase
+      .from("categories")
+      .select("*")
+      .eq("id", input.category_id)
+      .limit(1);
+    throwIf(catErr);
+    const cat = catRows?.[0] ? mapCategory(catRows[0] as Record<string, unknown>) : null;
     const isRefundable = cat ? !!cat.tax_deductible && input.type === "purchase" : false;
 
-    await db.execute(
-      `INSERT INTO tax_records
-        (id, transaction_id, supply_amount, vat_amount, is_refundable, tax_invoice_issued)
-       VALUES (?, ?, ?, ?, ?, 0)`,
-      [uuid("tax"), txnId, supply_amount, vat_amount, isRefundable ? 1 : 0],
-    );
+    const { error: taxErr } = await supabase.from("tax_records").insert({
+      id: uuid("tax"),
+      transaction_id: txnId,
+      supply_amount,
+      vat_amount,
+      is_refundable: isRefundable ? 1 : 0,
+      tax_invoice_issued: 0,
+    });
+    throwIf(taxErr);
   } catch (err) {
     // Best-effort rollback.
     for (const s of stockDeltas) {
       try {
-        await db.execute(
-          "UPDATE products SET stock = stock - ? WHERE id = ?",
-          [s.delta, s.productId],
-        );
+        const { data: prodRows } = await supabase
+          .from("products")
+          .select("stock")
+          .eq("id", s.productId)
+          .limit(1);
+        const currentStock = Number((prodRows?.[0] as { stock?: number } | undefined)?.stock ?? 0);
+        await supabase
+          .from("products")
+          .update({ stock: currentStock - s.delta })
+          .eq("id", s.productId);
       } catch {
         // ignore
       }
     }
     for (const itemId of insertedItemIds) {
       try {
-        await db.execute("DELETE FROM transaction_items WHERE id = ?", [itemId]);
+        await supabase.from("transaction_items").delete().eq("id", itemId);
       } catch {
         // ignore
       }
     }
     try {
-      await db.execute("DELETE FROM tax_records WHERE transaction_id = ?", [txnId]);
+      await supabase.from("tax_records").delete().eq("transaction_id", txnId);
     } catch {
       // ignore
     }
     try {
-      await db.execute("DELETE FROM transactions WHERE id = ?", [txnId]);
+      await supabase.from("transactions").delete().eq("id", txnId);
     } catch {
       // ignore
     }
@@ -429,50 +400,56 @@ export async function createTransaction(
           memo: input.memo ?? "",
         },
       );
-      await db.execute(
-        "UPDATE transactions SET synced_to_sheet = 1 WHERE id = ?",
-        [txnId],
-      );
+      await supabase.from("transactions").update({ synced_to_sheet: 1 }).eq("id", txnId);
     }
   } catch (e) {
     console.warn("[google] sheet append failed, will require manual retry:", e);
-    // 로컬 저장은 이미 성공했으므로 throw 하지 않음
   }
 
-  const rows = await db.select<RawTransaction[]>(
-    "SELECT * FROM transactions WHERE id = ?",
-    [txnId],
-  );
-  return mapTransaction(rows[0]!);
+  const { data: finalRows, error: finalErr } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("id", txnId)
+    .limit(1);
+  throwIf(finalErr);
+  return mapTransaction((finalRows?.[0] ?? {}) as Record<string, unknown>);
 }
 
 export async function deleteTransaction(id: string): Promise<void> {
-  const db = await getDb();
-  const txns = await db.select<{ type: string }[]>(
-    "SELECT type FROM transactions WHERE id = ?",
-    [id],
-  );
-  if (txns.length === 0) return;
-  const type = txns[0].type;
+  const { data: txnRows, error: txnErr } = await supabase
+    .from("transactions")
+    .select("type")
+    .eq("id", id)
+    .limit(1);
+  throwIf(txnErr);
+  if (!txnRows || txnRows.length === 0) return;
+  const type = (txnRows[0] as { type: string }).type;
 
   if (type === "purchase" || type === "sale") {
-    const items = await db.select<{ product_id: string; quantity: number }[]>(
-      "SELECT product_id, quantity FROM transaction_items WHERE transaction_id = ?",
-      [id],
-    );
-    for (const item of items) {
-      // 재고 역산: 구매는 입고였으므로 취소 시 차감, 판매는 출고였으므로 취소 시 증가
+    const { data: items, error: itemsErr } = await supabase
+      .from("transaction_items")
+      .select("product_id, quantity")
+      .eq("transaction_id", id);
+    throwIf(itemsErr);
+    for (const item of (items ?? []) as { product_id: string; quantity: number }[]) {
       const reverseDelta = type === "purchase" ? -item.quantity : item.quantity;
-      await db.execute("UPDATE products SET stock = stock + ? WHERE id = ?", [
-        reverseDelta,
-        item.product_id,
-      ]);
+      const { data: prodRows } = await supabase
+        .from("products")
+        .select("stock")
+        .eq("id", item.product_id)
+        .limit(1);
+      const currentStock = Number((prodRows?.[0] as { stock?: number } | undefined)?.stock ?? 0);
+      await supabase
+        .from("products")
+        .update({ stock: currentStock + reverseDelta })
+        .eq("id", item.product_id);
     }
   }
 
-  await db.execute("DELETE FROM transaction_items WHERE transaction_id = ?", [id]);
-  await db.execute("DELETE FROM tax_records WHERE transaction_id = ?", [id]);
-  await db.execute("DELETE FROM transactions WHERE id = ?", [id]);
+  await supabase.from("transaction_items").delete().eq("transaction_id", id);
+  await supabase.from("tax_records").delete().eq("transaction_id", id);
+  const { error: delErr } = await supabase.from("transactions").delete().eq("id", id);
+  throwIf(delErr);
 }
 
 function typeKo(t: Transaction["type"]): string {
@@ -489,18 +466,19 @@ function typeKo(t: Transaction["type"]): string {
 }
 
 export async function syncTransactionToSheet(txnId: string): Promise<void> {
-  const db = await getDb();
   const user = await getCurrentUser();
   if (!user?.google_sheet_id) {
     throw new Error("구글시트가 설정되지 않았습니다.");
   }
-  const rows = await db.select<RawTransaction[]>(
-    "SELECT * FROM transactions WHERE id = ?",
-    [txnId],
-  );
-  const raw = rows[0];
+  const { data: rows, error } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("id", txnId)
+    .limit(1);
+  throwIf(error);
+  const raw = rows?.[0];
   if (!raw) throw new Error("거래를 찾을 수 없습니다.");
-  const txn = mapTransaction(raw);
+  const txn = mapTransaction(raw as Record<string, unknown>);
   const cp = txn.counterparty_id
     ? (await listCounterparties()).find((c) => c.id === txn.counterparty_id)
     : null;
@@ -530,22 +508,22 @@ export async function syncTransactionToSheet(txnId: string): Promise<void> {
       memo: txn.memo ?? "",
     },
   );
-  await db.execute(
-    "UPDATE transactions SET synced_to_sheet = 1 WHERE id = ?",
-    [txnId],
-  );
+  await supabase.from("transactions").update({ synced_to_sheet: 1 }).eq("id", txnId);
 }
 
 // ---------- Sheet Sync ----------
 export async function resetSheetSync(): Promise<void> {
-  const db = await getDb();
-  await db.execute("UPDATE transactions SET synced_to_sheet = 0");
+  // Supabase requires a filter for update; use a wide filter.
+  const { error } = await supabase
+    .from("transactions")
+    .update({ synced_to_sheet: 0 })
+    .neq("id", "__none__");
+  throwIf(error);
 }
 
 export async function syncAllTransactions(
   onProgress?: (done: number, total: number) => void,
 ): Promise<{ success: number; failed: number }> {
-  const db = await getDb();
   const user = await getCurrentUser();
   if (!user?.google_sheet_id) {
     throw new Error("구글시트가 설정되지 않았습니다.");
@@ -553,21 +531,50 @@ export async function syncAllTransactions(
   const sheetId = user.google_sheet_id;
   const HEADER = ["날짜", "유형", "거래처", "분류", "상품내역", "수수료", "금액", "결제상태", "메모"];
 
-  const rows = await db.select<RawTransaction[]>(
-    "SELECT * FROM transactions ORDER BY date ASC",
-  );
+  const { data: txRows, error: txErr } = await supabase
+    .from("transactions")
+    .select("*")
+    .order("date", { ascending: true });
+  throwIf(txErr);
+  const rows = (txRows ?? []).map((r) => mapTransaction(r as Record<string, unknown>));
   const total = rows.length;
   const counterparties = await listCounterparties();
   const categories = await listCategories();
   const cpMap = new Map(counterparties.map((c) => [c.id, c]));
   const catMap = new Map(categories.map((c) => [c.id, c]));
 
+  // Batch-fetch items for all itemized transactions in one query
+  const itemizedIds = rows.filter((t) => t.type !== "expense").map((t) => t.id);
+  const itemsByTxn = new Map<string, TransactionItem[]>();
+  if (itemizedIds.length > 0) {
+    const { data: itemData, error: itemErr } = await supabase
+      .from("transaction_items")
+      .select("*, products(name, color)")
+      .in("transaction_id", itemizedIds);
+    throwIf(itemErr);
+    for (const r of (itemData ?? []) as Record<string, unknown>[]) {
+      const product = r.products as { name?: string | null; color?: string | null } | null;
+      const txnId = r.transaction_id as string;
+      const list = itemsByTxn.get(txnId) ?? [];
+      list.push({
+        id: r.id as string,
+        transaction_id: txnId,
+        product_id: r.product_id as string,
+        quantity: r.quantity as number,
+        unit_price: r.unit_price as number,
+        product_name: product?.name ?? undefined,
+        product_color: product?.color ?? null,
+      });
+      itemsByTxn.set(txnId, list);
+    }
+  }
+
   // 월별로 그룹화
-  const byMonth = new Map<string, RawTransaction[]>();
-  for (const raw of rows) {
-    const month = raw.date.slice(0, 7); // "2026-04"
+  const byMonth = new Map<string, Transaction[]>();
+  for (const txn of rows) {
+    const month = txn.date.slice(0, 7);
     if (!byMonth.has(month)) byMonth.set(month, []);
-    byMonth.get(month)!.push(raw);
+    byMonth.get(month)!.push(txn);
   }
 
   let success = 0;
@@ -576,10 +583,9 @@ export async function syncAllTransactions(
 
   for (const [month, monthRows] of byMonth) {
     const dataRows: string[][] = [];
-    for (const raw of monthRows) {
-      const txn = mapTransaction(raw);
+    for (const txn of monthRows) {
       try {
-        const items = txn.type !== "expense" ? await listTransactionItems(txn.id) : [];
+        const items = txn.type !== "expense" ? itemsByTxn.get(txn.id) ?? [] : [];
         const itemsSummary = items
           .map((it) => {
             const name = it.product_name ?? it.product_id;
@@ -606,10 +612,10 @@ export async function syncAllTransactions(
       onProgress?.(done, total);
     }
     await writeTabRows(sheetId, month, HEADER, dataRows);
-    await db.execute(
-      "UPDATE transactions SET synced_to_sheet = 1 WHERE date LIKE ?",
-      [`${month}%`],
-    );
+    await supabase
+      .from("transactions")
+      .update({ synced_to_sheet: 1 })
+      .like("date", `${month}%`);
   }
   return { success, failed };
 }
@@ -617,16 +623,13 @@ export async function syncAllTransactions(
 export async function restoreFromSheet(
   onProgress?: (done: number, total: number) => void,
 ): Promise<{ restored: number; skipped: number }> {
-  const db = await getDb();
   const user = await getCurrentUser();
   if (!user?.google_sheet_id) {
     throw new Error("구글시트가 설정되지 않았습니다.");
   }
   const sheetId = user.google_sheet_id;
-  // YYYY-MM 패턴 탭 모두 읽기
   const allTabs = await getSheetTabs(sheetId);
   const monthTabs = allTabs.filter((t) => /^\d{4}-\d{2}$/.test(t)).sort();
-  // 레거시: YYYY-MM 탭이 없으면 기존 고정 탭에서도 읽기
   const fixedTab = user.google_sheet_tab || "Transactions";
   if (monthTabs.length === 0 && allTabs.includes(fixedTab)) {
     monthTabs.push(fixedTab);
@@ -642,15 +645,16 @@ export async function restoreFromSheet(
   let restored = 0;
   let skipped = 0;
 
-  // 기존 거래 날짜+금액+유형으로 중복 체크용 세트
-  const existing = await db.select<{ date: string; amount: number; type: string }[]>(
-    "SELECT date, amount, type FROM transactions",
-  );
+  const { data: existing, error: existingErr } = await supabase
+    .from("transactions")
+    .select("date, amount, type");
+  throwIf(existingErr);
   const existingSet = new Set(
-    existing.map((e) => `${e.date}|${e.type}|${e.amount}`),
+    ((existing ?? []) as { date: string; amount: number; type: string }[]).map(
+      (e) => `${e.date}|${e.type}|${e.amount}`,
+    ),
   );
 
-  // 거래처/분류 캐시
   const counterparties = await listCounterparties();
   const categories = await listCategories();
   const cpByName = new Map(counterparties.map((c) => [c.name, c]));
@@ -658,7 +662,6 @@ export async function restoreFromSheet(
 
   for (let i = 0; i < sheetRows.length; i++) {
     const row = sheetRows[i]!;
-    // [날짜, 유형, 거래처, 분류, 상품내역, 수수료, 금액, 결제상태, 메모]
     const date = row[0] ?? "";
     const typeKoVal = row[1] ?? "";
     const counterpartyName = row[2] ?? "";
@@ -676,7 +679,6 @@ export async function restoreFromSheet(
       : "";
     if (!type) { skipped++; onProgress?.(i + 1, total); continue; }
 
-    // 중복 체크
     const key = `${date}|${type}|${amount}`;
     if (existingSet.has(key)) {
       skipped++;
@@ -684,10 +686,8 @@ export async function restoreFromSheet(
       continue;
     }
 
-    // 거래처 찾기 (없으면 null)
     const cp = counterpartyName ? cpByName.get(counterpartyName) : null;
 
-    // 분류 찾기 (없으면 해당 타입의 첫 분류 사용)
     let cat = categoryName ? catByName.get(categoryName) : null;
     if (!cat) {
       cat = categories.find((c) => c.type === type) ?? null;
@@ -695,17 +695,23 @@ export async function restoreFromSheet(
     if (!cat) { skipped++; onProgress?.(i + 1, total); continue; }
 
     const txnId = uuid("txn");
-    try {
-      await db.execute(
-        `INSERT INTO transactions
-          (id, date, type, amount, counterparty_id, category_id, memo, payment_status, synced_to_sheet, commission_amount)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-        [txnId, date, type, amount, cp?.id ?? null, cat.id, memo || null, paymentStatus, commission],
-      );
+    const { error: insErr } = await supabase.from("transactions").insert({
+      id: txnId,
+      date,
+      type,
+      amount,
+      counterparty_id: cp?.id ?? null,
+      category_id: cat.id,
+      memo: memo || null,
+      payment_status: paymentStatus,
+      synced_to_sheet: 1,
+      commission_amount: commission,
+    });
+    if (insErr) {
+      skipped++;
+    } else {
       existingSet.add(key);
       restored++;
-    } catch {
-      skipped++;
     }
     onProgress?.(i + 1, total);
   }
@@ -717,78 +723,86 @@ export async function getCurrentMonthSummary(
   year: number,
   month: number,
 ): Promise<DashboardSummary> {
-  const db = await getDb();
   const mm = String(month).padStart(2, "0");
   const prefix = `${year}-${mm}`;
-  const rows = await db.select<{ type: string; total: number; cnt: number }[]>(
-    `SELECT type, COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt
-     FROM transactions
-     WHERE substr(date, 1, 7) = ?
-     GROUP BY type`,
-    [prefix],
-  );
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("type, amount")
+    .like("date", `${prefix}%`);
+  throwIf(error);
   let sales = 0;
   let expense = 0;
   let count = 0;
-  for (const r of rows) {
-    count += Number(r.cnt);
-    if (r.type === "sale") sales += Number(r.total);
-    else if (r.type === "purchase" || r.type === "expense") expense += Number(r.total);
+  for (const r of (data ?? []) as { type: string; amount: number }[]) {
+    count++;
+    if (r.type === "sale") sales += Number(r.amount);
+    else if (r.type === "purchase" || r.type === "expense") expense += Number(r.amount);
   }
   return { sales, expense, netIncome: sales - expense, count };
 }
 
 export async function getOverdueReceivables(): Promise<OverdueReceivable[]> {
-  const db = await getDb();
-  const rows = await db.select<
-    { counterparty_id: string; total: number; earliest_date: string }[]
-  >(
-    `SELECT counterparty_id,
-            COALESCE(SUM(amount), 0) AS total,
-            MIN(date) AS earliest_date
-       FROM transactions
-      WHERE type = 'sale'
-        AND payment_status = 'pending'
-        AND counterparty_id IS NOT NULL
-      GROUP BY counterparty_id
-      ORDER BY earliest_date ASC`,
-  );
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("counterparty_id, amount, date")
+    .eq("type", "sale")
+    .eq("payment_status", "pending")
+    .not("counterparty_id", "is", null);
+  throwIf(error);
+  const rows = (data ?? []) as { counterparty_id: string; amount: number; date: string }[];
   if (rows.length === 0) return [];
+  const agg = new Map<string, { total: number; earliest: string }>();
+  for (const r of rows) {
+    const cur = agg.get(r.counterparty_id);
+    if (!cur) {
+      agg.set(r.counterparty_id, { total: Number(r.amount), earliest: r.date });
+    } else {
+      cur.total += Number(r.amount);
+      if (r.date < cur.earliest) cur.earliest = r.date;
+    }
+  }
   const counterparties = await listCounterparties();
   const cpMap = new Map(counterparties.map((c) => [c.id, c]));
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const results: OverdueReceivable[] = [];
-  for (const r of rows) {
-    const cp = cpMap.get(r.counterparty_id);
+  const sorted = Array.from(agg.entries()).sort((a, b) =>
+    a[1].earliest.localeCompare(b[1].earliest),
+  );
+  for (const [cpId, v] of sorted) {
+    const cp = cpMap.get(cpId);
     if (!cp) continue;
-    const earliest = new Date(r.earliest_date);
+    const earliest = new Date(v.earliest);
     earliest.setHours(0, 0, 0, 0);
     const daysPending = Math.floor((today.getTime() - earliest.getTime()) / 86_400_000);
-    results.push({ counterparty: cp, total: Number(r.total), earliestDate: r.earliest_date, daysPending });
+    results.push({ counterparty: cp, total: v.total, earliestDate: v.earliest, daysPending });
   }
   return results;
 }
 
 export async function getLowStockProducts(threshold = 5): Promise<Product[]> {
-  const db = await getDb();
-  const rows = await db.select<RawProduct[]>(
-    "SELECT * FROM products WHERE (is_deleted = 0 OR is_deleted IS NULL) AND stock <= ? ORDER BY stock ASC",
-    [threshold],
-  );
-  return rows.map(mapProduct);
+  const { data, error } = await supabase
+    .from("products")
+    .select("*")
+    .eq("is_deleted", 0)
+    .lte("stock", threshold)
+    .order("stock", { ascending: true });
+  throwIf(error);
+  return (data ?? []).map((r) => mapProduct(r as Record<string, unknown>));
 }
 
 export async function getPendingDeliveryProducts(): Promise<Product[]> {
-  const db = await getDb();
-  const rows = await db.select<RawProduct[]>(
-    "SELECT * FROM products WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (is_pending_delivery = 1 OR LOWER(CAST(is_pending_delivery AS TEXT)) = 'true') ORDER BY expected_arrival_date ASC",
-  );
-  return rows.map(mapProduct);
+  const { data, error } = await supabase
+    .from("products")
+    .select("*")
+    .eq("is_deleted", 0)
+    .eq("is_pending_delivery", 1)
+    .order("expected_arrival_date", { ascending: true });
+  throwIf(error);
+  return (data ?? []).map((r) => mapProduct(r as Record<string, unknown>));
 }
 
 export async function getNextTaxDeadline(): Promise<TaxDeadlineInfo> {
-  const db = await getDb();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const y = today.getFullYear();
@@ -803,71 +817,81 @@ export async function getNextTaxDeadline(): Promise<TaxDeadlineInfo> {
   const chosen = candidates.find((c) => c.date >= today) ?? candidates[candidates.length - 1]!;
   const daysLeft = Math.ceil((chosen.date.getTime() - today.getTime()) / 86_400_000);
 
-  const rows = await db.select<{ total_vat: number }[]>(
-    `SELECT COALESCE(SUM(tr.vat_amount), 0) AS total_vat
-       FROM tax_records tr
-       JOIN transactions t ON t.id = tr.transaction_id
-      WHERE t.date BETWEEN ? AND ?`,
-    [chosen.start, chosen.end],
-  );
+  // Fetch transactions in the period, then sum vat_amount from tax_records
+  const { data: txnRows, error: txnErr } = await supabase
+    .from("transactions")
+    .select("id")
+    .gte("date", chosen.start)
+    .lte("date", chosen.end);
+  throwIf(txnErr);
+  const txnIds = ((txnRows ?? []) as { id: string }[]).map((r) => r.id);
+  let totalVat = 0;
+  if (txnIds.length > 0) {
+    const { data: taxRows, error: taxErr } = await supabase
+      .from("tax_records")
+      .select("vat_amount, transaction_id")
+      .in("transaction_id", txnIds);
+    throwIf(taxErr);
+    for (const t of (taxRows ?? []) as { vat_amount: number }[]) {
+      totalVat += Number(t.vat_amount) || 0;
+    }
+  }
 
   return {
     deadlineDate: chosen.date.toISOString().slice(0, 10),
     daysLeft,
     periodLabel: chosen.label,
-    estimatedVat: Number(rows[0]?.total_vat ?? 0),
+    estimatedVat: totalVat,
   };
 }
 
 export async function getTodayUnpaidBySupplier(): Promise<SupplierUnpaidTotal[]> {
-  const db = await getDb();
   const today = new Date();
   const y = today.getFullYear();
   const m = String(today.getMonth() + 1).padStart(2, "0");
   const d = String(today.getDate()).padStart(2, "0");
   const dateStr = `${y}-${m}-${d}`;
-  const rows = await db.select<
-    { counterparty_id: string; total: number }[]
-  >(
-    `SELECT counterparty_id, COALESCE(SUM(amount), 0) AS total
-       FROM transactions
-      WHERE date = ?
-        AND type = 'purchase'
-        AND payment_status = 'pending'
-        AND counterparty_id IS NOT NULL
-      GROUP BY counterparty_id`,
-    [dateStr],
-  );
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("counterparty_id, amount")
+    .eq("date", dateStr)
+    .eq("type", "purchase")
+    .eq("payment_status", "pending")
+    .not("counterparty_id", "is", null);
+  throwIf(error);
+  const rows = (data ?? []) as { counterparty_id: string; amount: number }[];
   if (rows.length === 0) return [];
+  const agg = new Map<string, number>();
+  for (const r of rows) {
+    agg.set(r.counterparty_id, (agg.get(r.counterparty_id) ?? 0) + Number(r.amount));
+  }
   const counterparties = await listCounterparties();
   const cpMap = new Map(counterparties.map((c) => [c.id, c]));
   const results: SupplierUnpaidTotal[] = [];
-  for (const r of rows) {
-    const cp = cpMap.get(r.counterparty_id);
-    if (cp) results.push({ counterparty: cp, total: Number(r.total) });
+  for (const [cpId, total] of agg) {
+    const cp = cpMap.get(cpId);
+    if (cp) results.push({ counterparty: cp, total });
   }
   return results;
 }
 
 // ---------- Cashflow Prediction ----------
 export async function getMonthlyStats(months = 6): Promise<MonthlyStats[]> {
-  const db = await getDb();
-  const rows = await db.select<{ month: string; type: string; total: number }[]>(
-    `SELECT substr(date, 1, 7) AS month,
-            type,
-            COALESCE(SUM(amount), 0) AS total
-       FROM transactions
-      WHERE date >= date('now', ? || ' months')
-      GROUP BY month, type
-      ORDER BY month ASC`,
-    [`-${months}`],
-  );
+  const since = new Date();
+  since.setMonth(since.getMonth() - months);
+  const sinceStr = since.toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("date, type, amount")
+    .gte("date", sinceStr);
+  throwIf(error);
   const monthMap = new Map<string, MonthlyStats>();
-  for (const r of rows) {
-    const entry = monthMap.get(r.month) ?? { month: r.month, sales: 0, expense: 0 };
-    if (r.type === "sale") entry.sales += Number(r.total);
-    else if (r.type === "purchase" || r.type === "expense") entry.expense += Number(r.total);
-    monthMap.set(r.month, entry);
+  for (const r of (data ?? []) as { date: string; type: string; amount: number }[]) {
+    const month = r.date.slice(0, 7);
+    const entry = monthMap.get(month) ?? { month, sales: 0, expense: 0 };
+    if (r.type === "sale") entry.sales += Number(r.amount);
+    else if (r.type === "purchase" || r.type === "expense") entry.expense += Number(r.amount);
+    monthMap.set(month, entry);
   }
   return Array.from(monthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
 }
@@ -877,73 +901,67 @@ export async function getTaxReport(
   startDate: string,
   endDate: string,
 ): Promise<TaxReportRow[]> {
-  const db = await getDb();
-  type RawTaxRow = {
-    date: string;
-    transaction_type: string;
-    counterparty: string;
-    category: string;
-    amount: number;
-    supply_amount: number;
-    vat_amount: number;
-    is_refundable: number;
-    memo: string;
-  };
-  const rows = await db.select<RawTaxRow[]>(
-    `SELECT t.date,
-            t.type        AS transaction_type,
-            COALESCE(cp.name, '') AS counterparty,
-            COALESCE(cat.name, '') AS category,
-            t.amount,
-            tr.supply_amount,
-            tr.vat_amount,
-            tr.is_refundable,
-            COALESCE(t.memo, '') AS memo
-       FROM transactions t
-       JOIN tax_records tr ON tr.transaction_id = t.id
-       LEFT JOIN counterparties cp ON cp.id = t.counterparty_id
-       LEFT JOIN categories cat ON cat.id = t.category_id
-      WHERE t.date BETWEEN ? AND ?
-      ORDER BY t.date ASC`,
-    [startDate, endDate],
-  );
-  return rows.map((r) => ({
-    date: r.date,
-    transactionType: r.transaction_type,
-    counterparty: r.counterparty,
-    category: r.category,
-    amount: Number(r.amount),
-    supplyAmount: Number(r.supply_amount),
-    vatAmount: Number(r.vat_amount),
-    isRefundable: !!r.is_refundable,
-    memo: r.memo,
-  }));
+  const { data, error } = await supabase
+    .from("transactions")
+    .select(
+      "date, type, amount, memo, counterparties(name), categories(name), tax_records(supply_amount, vat_amount, is_refundable)",
+    )
+    .gte("date", startDate)
+    .lte("date", endDate)
+    .order("date", { ascending: true });
+  throwIf(error);
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const results: TaxReportRow[] = [];
+  for (const r of rows) {
+    const cp = r.counterparties as { name?: string | null } | null;
+    const cat = r.categories as { name?: string | null } | null;
+    const taxArr = r.tax_records as
+      | { supply_amount: number; vat_amount: number; is_refundable: number }[]
+      | { supply_amount: number; vat_amount: number; is_refundable: number }
+      | null;
+    const tax = Array.isArray(taxArr) ? taxArr[0] : taxArr;
+    if (!tax) continue;
+    results.push({
+      date: r.date as string,
+      transactionType: r.type as string,
+      counterparty: cp?.name ?? "",
+      category: cat?.name ?? "",
+      amount: Number(r.amount),
+      supplyAmount: Number(tax.supply_amount),
+      vatAmount: Number(tax.vat_amount),
+      isRefundable: !!tax.is_refundable,
+      memo: (r.memo as string) ?? "",
+    });
+  }
+  return results;
 }
 
 // ---------- JSON Backup / Restore ----------
 export async function exportAllData(): Promise<string> {
-  const db = await getDb();
   const [users, counterparties, categories, products, transactions, transactionItems, taxRecords] =
     await Promise.all([
-      db.select<unknown[]>("SELECT * FROM users"),
-      db.select<unknown[]>("SELECT * FROM counterparties"),
-      db.select<unknown[]>("SELECT * FROM categories"),
-      db.select<unknown[]>("SELECT * FROM products"),
-      db.select<unknown[]>("SELECT * FROM transactions ORDER BY date ASC"),
-      db.select<unknown[]>("SELECT * FROM transaction_items"),
-      db.select<unknown[]>("SELECT * FROM tax_records"),
+      supabase.from("users").select("*"),
+      supabase.from("counterparties").select("*"),
+      supabase.from("categories").select("*"),
+      supabase.from("products").select("*"),
+      supabase.from("transactions").select("*").order("date", { ascending: true }),
+      supabase.from("transaction_items").select("*"),
+      supabase.from("tax_records").select("*"),
     ]);
+  for (const res of [users, counterparties, categories, products, transactions, transactionItems, taxRecords]) {
+    throwIf(res.error);
+  }
   return JSON.stringify(
     {
       version: 1,
       exported_at: new Date().toISOString(),
-      users,
-      counterparties,
-      categories,
-      products,
-      transactions,
-      transaction_items: transactionItems,
-      tax_records: taxRecords,
+      users: users.data ?? [],
+      counterparties: counterparties.data ?? [],
+      categories: categories.data ?? [],
+      products: products.data ?? [],
+      transactions: transactions.data ?? [],
+      transaction_items: transactionItems.data ?? [],
+      tax_records: taxRecords.data ?? [],
     },
     null,
     2,
@@ -953,7 +971,6 @@ export async function exportAllData(): Promise<string> {
 export async function importAllData(
   json: string,
 ): Promise<{ imported: number; skipped: number; errors: string[] }> {
-  const db = await getDb();
   const data = JSON.parse(json) as {
     version?: number;
     counterparties?: unknown[];
@@ -967,31 +984,31 @@ export async function importAllData(
   let skipped = 0;
   const errors: string[] = [];
 
-  async function upsertRows(
-    table: string,
-    rows: unknown[],
-    idField = "id",
-  ) {
+  async function upsertRows(table: string, rows: unknown[]) {
     for (const row of rows) {
       const r = row as Record<string, unknown>;
-      const keys = Object.keys(r);
-      const placeholders = keys.map(() => "?").join(", ");
-      const cols = keys.join(", ");
-      const vals = keys.map((k) => r[k]);
       try {
-        const existing = await db.select<{ id: string }[]>(
-          `SELECT id FROM ${table} WHERE ${idField} = ?`,
-          [r[idField]],
-        );
-        if (existing.length > 0) {
+        const { data: existing, error: selErr } = await supabase
+          .from(table)
+          .select("id")
+          .eq("id", r.id as string)
+          .limit(1);
+        if (selErr) {
+          errors.push(`${table}: ${selErr.message}`);
           skipped++;
           continue;
         }
-        await db.execute(
-          `INSERT OR IGNORE INTO ${table} (${cols}) VALUES (${placeholders})`,
-          vals,
-        );
-        imported++;
+        if (existing && existing.length > 0) {
+          skipped++;
+          continue;
+        }
+        const { error: insErr } = await supabase.from(table).insert(r);
+        if (insErr) {
+          errors.push(`${table}: ${insErr.message}`);
+          skipped++;
+        } else {
+          imported++;
+        }
       } catch (e) {
         errors.push(`${table}: ${e instanceof Error ? e.message : String(e)}`);
         skipped++;
@@ -1012,23 +1029,22 @@ export async function importAllData(
 export async function getCounterpartyPendingTransactions(
   counterpartyId: string,
 ): Promise<Transaction[]> {
-  const db = await getDb();
-  const rows = await db.select<RawTransaction[]>(
-    `SELECT * FROM transactions
-      WHERE counterparty_id = ?
-        AND payment_status = 'pending'
-      ORDER BY date ASC`,
-    [counterpartyId],
-  );
-  return rows.map(mapTransaction);
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("counterparty_id", counterpartyId)
+    .eq("payment_status", "pending")
+    .order("date", { ascending: true });
+  throwIf(error);
+  return (data ?? []).map((r) => mapTransaction(r as Record<string, unknown>));
 }
 
 export async function settleTransaction(transactionId: string): Promise<void> {
-  const db = await getDb();
-  await db.execute(
-    "UPDATE transactions SET payment_status = 'paid' WHERE id = ?",
-    [transactionId],
-  );
+  const { error } = await supabase
+    .from("transactions")
+    .update({ payment_status: "paid" })
+    .eq("id", transactionId);
+  throwIf(error);
 }
 
 // ---------- Counterparty Statement ----------
@@ -1047,47 +1063,43 @@ export async function getCounterpartyStatement(
   startDate: string,
   endDate: string,
 ): Promise<StatementRow[]> {
-  const db = await getDb();
-  const rows = await db.select<{
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("date, type, amount, commission_amount, payment_status, memo, category_id")
+    .eq("counterparty_id", counterpartyId)
+    .gte("date", startDate)
+    .lte("date", endDate)
+    .order("date", { ascending: true });
+  throwIf(error);
+  const categories = await listCategories();
+  const catMap = new Map(categories.map((c) => [c.id, c]));
+  return ((data ?? []) as {
     date: string;
     type: string;
-    category: string;
     amount: number;
     commission_amount: number;
     payment_status: string;
-    memo: string;
-  }[]>(
-    `SELECT t.date,
-            t.type,
-            COALESCE(cat.name, '') AS category,
-            t.amount,
-            t.commission_amount,
-            t.payment_status,
-            COALESCE(t.memo, '') AS memo
-       FROM transactions t
-       LEFT JOIN categories cat ON cat.id = t.category_id
-      WHERE t.counterparty_id = ?
-        AND t.date BETWEEN ? AND ?
-      ORDER BY t.date ASC`,
-    [counterpartyId, startDate, endDate],
-  );
-  return rows.map((r) => ({
+    memo: string | null;
+    category_id: string;
+  }[]).map((r) => ({
     date: r.date,
     type: r.type,
-    category: r.category,
+    category: catMap.get(r.category_id)?.name ?? "",
     amount: Number(r.amount),
     commission_amount: Number(r.commission_amount),
     payment_status: r.payment_status,
-    memo: r.memo,
+    memo: r.memo ?? "",
   }));
 }
 
 // ---------- Transaction Templates ----------
 export async function listTransactionTemplates(): Promise<TransactionTemplate[]> {
-  const db = await getDb();
-  return db.select<TransactionTemplate[]>(
-    "SELECT * FROM transaction_templates ORDER BY name ASC",
-  );
+  const { data, error } = await supabase
+    .from("transaction_templates")
+    .select("*")
+    .order("name", { ascending: true });
+  throwIf(error);
+  return (data ?? []) as TransactionTemplate[];
 }
 
 export async function saveTransactionTemplate(
@@ -1097,19 +1109,26 @@ export async function saveTransactionTemplate(
     commission_amount: number;
   },
 ): Promise<void> {
-  const db = await getDb();
   const id = uuid("tpl");
-  await db.execute(
-    `INSERT OR REPLACE INTO transaction_templates
-      (id, name, type, counterparty_id, category_id, amount, commission_amount, memo)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, name, input.type, input.counterparty_id, input.category_id, input.amount, input.commission_amount, input.memo ?? null],
+  const { error } = await supabase.from("transaction_templates").upsert(
+    {
+      id,
+      name,
+      type: input.type,
+      counterparty_id: input.counterparty_id,
+      category_id: input.category_id,
+      amount: input.amount,
+      commission_amount: input.commission_amount,
+      memo: input.memo ?? null,
+    },
+    { onConflict: "name" },
   );
+  throwIf(error);
 }
 
 export async function deleteTransactionTemplate(id: string): Promise<void> {
-  const db = await getDb();
-  await db.execute("DELETE FROM transaction_templates WHERE id = ?", [id]);
+  const { error } = await supabase.from("transaction_templates").delete().eq("id", id);
+  throwIf(error);
 }
 
 // ---------- Sheet: 재고 탭 동기화 ----------
@@ -1141,23 +1160,37 @@ export async function syncStockToSheet(): Promise<void> {
 export async function syncSummaryToSheet(): Promise<void> {
   const user = await getCurrentUser();
   if (!user?.google_sheet_id) throw new Error("구글시트가 설정되지 않았습니다.");
-  const db = await getDb();
+
+  const counterparties = await listCounterparties();
+  const { data: txData, error } = await supabase
+    .from("transactions")
+    .select("counterparty_id, type, amount, payment_status");
+  throwIf(error);
+  const txns = (txData ?? []) as {
+    counterparty_id: string | null;
+    type: string;
+    amount: number;
+    payment_status: string;
+  }[];
 
   type SummaryRow = { name: string; total_sales: number; total_purchase: number; pending: number };
-  const rows = await db.select<SummaryRow[]>(`
-    SELECT
-      c.name,
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.amount ELSE 0 END), 0) AS total_sales,
-      COALESCE(SUM(CASE WHEN t.type = 'purchase' THEN t.amount ELSE 0 END), 0) AS total_purchase,
-      COALESCE(SUM(CASE WHEN t.type = 'sale' AND t.payment_status = 'pending' THEN t.amount ELSE 0 END), 0) AS pending
-    FROM counterparties c
-    LEFT JOIN transactions t ON t.counterparty_id = c.id
-    GROUP BY c.id, c.name
-    ORDER BY total_sales DESC
-  `);
+  const summaries: SummaryRow[] = counterparties.map((c) => {
+    let total_sales = 0;
+    let total_purchase = 0;
+    let pending = 0;
+    for (const t of txns) {
+      if (t.counterparty_id !== c.id) continue;
+      const amt = Number(t.amount);
+      if (t.type === "sale") total_sales += amt;
+      if (t.type === "purchase") total_purchase += amt;
+      if (t.type === "sale" && t.payment_status === "pending") pending += amt;
+    }
+    return { name: c.name, total_sales, total_purchase, pending };
+  });
+  summaries.sort((a, b) => b.total_sales - a.total_sales);
 
   const HEADER = ["거래처", "총 판매", "총 구매", "미수금"];
-  const dataRows: string[][] = rows.map((r) => [
+  const dataRows: string[][] = summaries.map((r) => [
     r.name,
     String(Math.trunc(r.total_sales)),
     String(Math.trunc(r.total_purchase)),
@@ -1194,4 +1227,3 @@ export async function exportStatementToSheet(
   ]);
   await writeTabRows(user.google_sheet_id, tabName, HEADER, dataRows);
 }
-
