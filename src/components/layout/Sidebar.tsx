@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Receipt, Users, Package, Settings } from "lucide-react";
+import { LayoutDashboard, Receipt, Users, Package, FileSpreadsheet, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -7,6 +7,7 @@ const navItems = [
   { to: "/transactions", label: "거래 내역", icon: Receipt, end: false },
   { to: "/products", label: "상품", icon: Package, end: false },
   { to: "/counterparties", label: "거래처", icon: Users, end: false },
+  { to: "/tax", label: "부가세 신고", icon: FileSpreadsheet, end: false },
   { to: "/settings", label: "설정", icon: Settings, end: false },
 ];
 

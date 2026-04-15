@@ -137,3 +137,35 @@ export interface SupplierUnpaidTotal {
   counterparty: Counterparty;
   total: number;
 }
+
+export interface OverdueReceivable {
+  counterparty: Counterparty;
+  total: number;
+  earliestDate: string;
+  daysPending: number;
+}
+
+export interface TaxDeadlineInfo {
+  deadlineDate: string;
+  daysLeft: number;
+  periodLabel: string;
+  estimatedVat: number;
+}
+
+export interface MonthlyStats {
+  month: string; // YYYY-MM
+  sales: number;
+  expense: number;
+}
+
+export interface TaxReportRow {
+  date: string;
+  transactionType: string;
+  counterparty: string;
+  category: string;
+  amount: number;
+  supplyAmount: number;
+  vatAmount: number;
+  isRefundable: boolean;
+  memo: string;
+}

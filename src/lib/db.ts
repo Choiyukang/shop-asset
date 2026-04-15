@@ -4,9 +4,13 @@ import type {
   Counterparty,
   CounterpartyInput,
   DashboardSummary,
+  MonthlyStats,
+  OverdueReceivable,
   Product,
   ProductInput,
   SupplierUnpaidTotal,
+  TaxDeadlineInfo,
+  TaxReportRow,
   TaxType,
   Transaction,
   TransactionInput,
@@ -670,6 +674,78 @@ export async function getCurrentMonthSummary(
   return { sales, expense, netIncome: sales - expense, count };
 }
 
+export async function getOverdueReceivables(): Promise<OverdueReceivable[]> {
+  const db = await getDb();
+  const rows = await db.select<
+    { counterparty_id: string; total: number; earliest_date: string }[]
+  >(
+    `SELECT counterparty_id,
+            COALESCE(SUM(amount), 0) AS total,
+            MIN(date) AS earliest_date
+       FROM transactions
+      WHERE type = 'sale'
+        AND payment_status = 'pending'
+        AND counterparty_id IS NOT NULL
+      GROUP BY counterparty_id
+      ORDER BY earliest_date ASC`,
+  );
+  if (rows.length === 0) return [];
+  const counterparties = await listCounterparties();
+  const cpMap = new Map(counterparties.map((c) => [c.id, c]));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const results: OverdueReceivable[] = [];
+  for (const r of rows) {
+    const cp = cpMap.get(r.counterparty_id);
+    if (!cp) continue;
+    const earliest = new Date(r.earliest_date);
+    earliest.setHours(0, 0, 0, 0);
+    const daysPending = Math.floor((today.getTime() - earliest.getTime()) / 86_400_000);
+    results.push({ counterparty: cp, total: Number(r.total), earliestDate: r.earliest_date, daysPending });
+  }
+  return results;
+}
+
+export async function getLowStockProducts(threshold = 5): Promise<Product[]> {
+  const db = await getDb();
+  return db.select<Product[]>(
+    "SELECT * FROM products WHERE stock <= ? ORDER BY stock ASC",
+    [threshold],
+  );
+}
+
+export async function getNextTaxDeadline(): Promise<TaxDeadlineInfo> {
+  const db = await getDb();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const y = today.getFullYear();
+
+  const candidates = [
+    { date: new Date(y, 3, 25), label: `${y}년 1기 예정`, start: `${y}-01-01`, end: `${y}-03-31` },
+    { date: new Date(y, 6, 25), label: `${y}년 1기 확정`, start: `${y}-01-01`, end: `${y}-06-30` },
+    { date: new Date(y, 9, 25), label: `${y}년 2기 예정`, start: `${y}-07-01`, end: `${y}-09-30` },
+    { date: new Date(y + 1, 0, 25), label: `${y}년 2기 확정`, start: `${y}-07-01`, end: `${y}-12-31` },
+  ];
+
+  const chosen = candidates.find((c) => c.date >= today) ?? candidates[candidates.length - 1]!;
+  const daysLeft = Math.ceil((chosen.date.getTime() - today.getTime()) / 86_400_000);
+
+  const rows = await db.select<{ total_vat: number }[]>(
+    `SELECT COALESCE(SUM(tr.vat_amount), 0) AS total_vat
+       FROM tax_records tr
+       JOIN transactions t ON t.id = tr.transaction_id
+      WHERE t.date BETWEEN ? AND ?`,
+    [chosen.start, chosen.end],
+  );
+
+  return {
+    deadlineDate: chosen.date.toISOString().slice(0, 10),
+    daysLeft,
+    periodLabel: chosen.label,
+    estimatedVat: Number(rows[0]?.total_vat ?? 0),
+  };
+}
+
 export async function getTodayUnpaidBySupplier(): Promise<SupplierUnpaidTotal[]> {
   const db = await getDb();
   const today = new Date();
@@ -698,4 +774,75 @@ export async function getTodayUnpaidBySupplier(): Promise<SupplierUnpaidTotal[]>
     if (cp) results.push({ counterparty: cp, total: Number(r.total) });
   }
   return results;
+}
+
+// ---------- Cashflow Prediction ----------
+export async function getMonthlyStats(months = 6): Promise<MonthlyStats[]> {
+  const db = await getDb();
+  const rows = await db.select<{ month: string; type: string; total: number }[]>(
+    `SELECT substr(date, 1, 7) AS month,
+            type,
+            COALESCE(SUM(amount), 0) AS total
+       FROM transactions
+      WHERE date >= date('now', ? || ' months')
+      GROUP BY month, type
+      ORDER BY month ASC`,
+    [`-${months}`],
+  );
+  const monthMap = new Map<string, MonthlyStats>();
+  for (const r of rows) {
+    const entry = monthMap.get(r.month) ?? { month: r.month, sales: 0, expense: 0 };
+    if (r.type === "sale") entry.sales += Number(r.total);
+    else if (r.type === "purchase" || r.type === "expense") entry.expense += Number(r.total);
+    monthMap.set(r.month, entry);
+  }
+  return Array.from(monthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
+}
+
+// ---------- Tax Report ----------
+export async function getTaxReport(
+  startDate: string,
+  endDate: string,
+): Promise<TaxReportRow[]> {
+  const db = await getDb();
+  type RawTaxRow = {
+    date: string;
+    transaction_type: string;
+    counterparty: string;
+    category: string;
+    amount: number;
+    supply_amount: number;
+    vat_amount: number;
+    is_refundable: number;
+    memo: string;
+  };
+  const rows = await db.select<RawTaxRow[]>(
+    `SELECT t.date,
+            t.type        AS transaction_type,
+            COALESCE(cp.name, '') AS counterparty,
+            COALESCE(cat.name, '') AS category,
+            t.amount,
+            tr.supply_amount,
+            tr.vat_amount,
+            tr.is_refundable,
+            COALESCE(t.memo, '') AS memo
+       FROM transactions t
+       JOIN tax_records tr ON tr.transaction_id = t.id
+       LEFT JOIN counterparties cp ON cp.id = t.counterparty_id
+       LEFT JOIN categories cat ON cat.id = t.category_id
+      WHERE t.date BETWEEN ? AND ?
+      ORDER BY t.date ASC`,
+    [startDate, endDate],
+  );
+  return rows.map((r) => ({
+    date: r.date,
+    transactionType: r.transaction_type,
+    counterparty: r.counterparty,
+    category: r.category,
+    amount: Number(r.amount),
+    supplyAmount: Number(r.supply_amount),
+    vatAmount: Number(r.vat_amount),
+    isRefundable: !!r.is_refundable,
+    memo: r.memo,
+  }));
 }
