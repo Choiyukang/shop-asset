@@ -9,7 +9,7 @@ import { useTransactionStore } from "@/stores/useTransactionStore";
 import { useCounterpartyStore } from "@/stores/useCounterpartyStore";
 import { useCategoryStore } from "@/stores/useCategoryStore";
 import { useProductStore } from "@/stores/useProductStore";
-import { getCurrentUser, syncTransactionToSheet, listTransactionTemplates, saveTransactionTemplate, deleteTransactionTemplate } from "@/lib/db";
+import { getCurrentUser, syncTransactionToSheet, listTransactionTemplates, saveTransactionTemplate, deleteTransactionTemplate, createCounterparty } from "@/lib/db";
 import type {
   PaymentStatus,
   TaxType,
@@ -29,6 +29,8 @@ interface FormState extends Omit<TransactionInput, "items" | "commission_amount"
   items: TransactionItemInput[];
   commission_amount: number;
   commission_overridden: boolean;
+  counterparty_name: string;
+  counterparty_phone: string;
 }
 
 function emptyForm(): FormState {
@@ -36,6 +38,8 @@ function emptyForm(): FormState {
     date: todayISO(),
     type: "purchase",
     counterparty_id: null,
+    counterparty_name: "",
+    counterparty_phone: "",
     category_id: "",
     amount: 0,
     memo: "",
@@ -139,17 +143,25 @@ export function TransactionsPage() {
   useEffect(() => {
     if (!isItemized) return;
     if (form.commission_overridden) return;
-    const cp = form.counterparty_id ? counterpartyMap.get(form.counterparty_id) : null;
+    const cpByName = form.counterparty_name
+      ? counterparties.find((c) => c.name.trim().toLowerCase() === form.counterparty_name.trim().toLowerCase())
+      : null;
+    const cp = cpByName ?? (form.counterparty_id ? counterpartyMap.get(form.counterparty_id) : null);
     const rate = cp?.commission_rate ?? 0;
     const auto = Math.round((itemsTotal * rate) / 100);
     setForm((f) => (f.commission_amount === auto ? f : { ...f, commission_amount: auto }));
-  }, [isItemized, itemsTotal, form.counterparty_id, form.commission_overridden, counterpartyMap]);
+  }, [isItemized, itemsTotal, form.counterparty_name, form.counterparty_id, form.commission_overridden, counterpartyMap, counterparties]);
 
   function loadTemplate(t: TransactionTemplate) {
+    const cpName = t.counterparty_id
+      ? (counterpartyMap.get(t.counterparty_id)?.name ?? "")
+      : "";
     setForm((f) => ({
       ...f,
       type: t.type,
       counterparty_id: t.counterparty_id,
+      counterparty_name: cpName,
+      counterparty_phone: "",
       category_id: t.category_id,
       amount: t.amount,
       commission_amount: t.commission_amount,
@@ -300,10 +312,31 @@ export function TransactionsPage() {
     }
     setSubmitting(true);
     try {
+      // 거래처 이름으로 자동 생성 또는 기존 매칭
+      let resolvedCpId = form.counterparty_id;
+      const cpName = form.counterparty_name.trim();
+      if (cpName) {
+        const existing = counterparties.find(
+          (c) => c.name.trim().toLowerCase() === cpName.toLowerCase()
+        );
+        if (existing) {
+          resolvedCpId = existing.id;
+        } else {
+          const newCp = await createCounterparty({
+            name: cpName,
+            type: "supplier",
+            phone: form.counterparty_phone.trim() || null,
+            commission_rate: 0,
+          });
+          resolvedCpId = newCp.id;
+          await loadCp();
+        }
+      }
+
       const payload: TransactionInput = {
         date: form.date,
         type: form.type,
-        counterparty_id: form.counterparty_id,
+        counterparty_id: resolvedCpId,
         category_id: form.category_id,
         amount: isItemized ? totalAmount : form.amount,
         memo: form.memo,
@@ -502,26 +535,34 @@ export function TransactionsPage() {
               </Select>
             </Field>
           </div>
-          <Field label="거래처">
-            <Select
-              value={form.counterparty_id ?? ""}
+          <Field label="거래처" hint="기존 거래처는 자동완성, 새 이름 입력 시 자동 등록">
+            <input
+              list="cp-list"
+              value={form.counterparty_name}
               onChange={(e) =>
-                setForm({
-                  ...form,
-                  counterparty_id: e.target.value || null,
-                  commission_overridden: false,
-                })
+                setForm({ ...form, counterparty_name: e.target.value, counterparty_id: null, commission_overridden: false })
               }
-            >
-              <option value="">(선택 안 함)</option>
+              placeholder="거래처명 입력 (선택)"
+              className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-400"
+            />
+            <datalist id="cp-list">
               {counterparties.map((cp) => (
-                <option key={cp.id} value={cp.id}>
-                  {cp.name}
-                  {cp.commission_rate ? ` (수수료 ${cp.commission_rate}%)` : ""}
-                </option>
+                <option key={cp.id} value={cp.name} />
               ))}
-            </Select>
+            </datalist>
           </Field>
+          {form.counterparty_name.trim() &&
+            !counterparties.some(
+              (c) => c.name.trim().toLowerCase() === form.counterparty_name.trim().toLowerCase()
+            ) && (
+            <Field label="연락처 (선택)" hint="새 거래처로 자동 등록됩니다">
+              <Input
+                value={form.counterparty_phone}
+                onChange={(e) => setForm({ ...form, counterparty_phone: e.target.value })}
+                placeholder="010-0000-0000"
+              />
+            </Field>
+          )}
           <Field label="분류" required>
             <Select
               value={form.category_id}
