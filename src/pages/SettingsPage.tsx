@@ -166,6 +166,45 @@ export function SettingsPage() {
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
   const [backupError, setBackupError] = useState<string | null>(null);
 
+  // 드라이브 백업
+  const [driveBusy, setDriveBusy] = useState(false);
+  const [driveStatus, setDriveStatus] = useState<string | null>(null);
+  const [driveError, setDriveError] = useState<string | null>(null);
+
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
+  const clientSecret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET ?? "";
+
+  async function onDriveBackup() {
+    setDriveBusy(true);
+    setDriveStatus(null);
+    setDriveError(null);
+    try {
+      const msg = await invoke<string>("drive_backup_db", { clientId, clientSecret });
+      setDriveStatus(msg);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
+      setDriveError(`백업 실패: ${msg}`);
+    } finally {
+      setDriveBusy(false);
+    }
+  }
+
+  async function onDriveRestore() {
+    if (!confirm("드라이브 백업에서 DB를 복원하면 현재 데이터가 교체됩니다. 계속할까요?")) return;
+    setDriveBusy(true);
+    setDriveStatus(null);
+    setDriveError(null);
+    try {
+      const msg = await invoke<string>("drive_restore_db", { clientId, clientSecret });
+      setDriveStatus(msg);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
+      setDriveError(`복원 실패: ${msg}`);
+    } finally {
+      setDriveBusy(false);
+    }
+  }
+
   // 텔레그램 봇
   const [botToken, setBotToken] = useState("");
   const [botSaving, setBotSaving] = useState(false);
@@ -657,6 +696,51 @@ export function SettingsPage() {
                   백업에서 복원
                 </span>
               </label>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>구글 드라이브 DB 백업</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="max-w-2xl space-y-4">
+            <p className="text-sm text-neutral-600">
+              SQLite DB 파일 전체를 구글 드라이브에 백업하거나 복원합니다. 구글 계정이 연결되어 있어야 합니다.
+            </p>
+            <div className="rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              드라이브 백업 기능을 처음 사용하려면 <strong>구글 계정을 재연결</strong>해야 합니다 (Drive 권한 추가).
+            </div>
+            <div className="rounded-md border border-neutral-100 bg-neutral-50 px-3 py-2 text-xs text-neutral-500 space-y-1">
+              <p><span className="font-medium text-neutral-700">드라이브에 백업</span> — 현재 DB를 드라이브의 <code>mallbook_backup.db</code>로 저장합니다. 기존 파일이 있으면 덮어씁니다.</p>
+              <p><span className="font-medium text-neutral-700">드라이브에서 복원</span> — 드라이브의 백업 파일로 DB를 교체합니다. 복원 후 앱을 재시작하세요.</p>
+            </div>
+            {driveError && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                {driveError}
+              </div>
+            )}
+            {driveStatus && (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-700">
+                {driveStatus}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <Button
+                onClick={onDriveBackup}
+                disabled={driveBusy || !googleConnected}
+                variant="secondary"
+              >
+                {driveBusy ? "처리 중…" : "드라이브에 백업"}
+              </Button>
+              <Button
+                onClick={onDriveRestore}
+                disabled={driveBusy || !googleConnected}
+                variant="secondary"
+              >
+                {driveBusy ? "처리 중…" : "드라이브에서 복원"}
+              </Button>
             </div>
           </div>
         </CardContent>

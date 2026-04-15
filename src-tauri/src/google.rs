@@ -3,12 +3,14 @@
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use keyring::Entry;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 const KEYRING_SERVICE: &str = "mallbook";
@@ -17,7 +19,10 @@ const KEYRING_EMAIL: &str = "google_email";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const USERINFO_URL: &str = "https://openidconnect.googleapis.com/v1/userinfo";
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
-const SCOPES: &str = "https://www.googleapis.com/auth/spreadsheets openid email";
+const SCOPES: &str = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file openid email";
+const DRIVE_FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
+const DRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files";
+const BACKUP_FILENAME: &str = "mallbook_backup.db";
 
 #[derive(Debug, Serialize, Clone)]
 pub struct GoogleTokens {
@@ -412,4 +417,155 @@ pub async fn google_disconnect() -> Result<(), String> {
 #[tauri::command]
 pub async fn google_is_connected() -> Result<bool, String> {
     Ok(load_refresh_token()?.is_some())
+}
+
+// ── Google Drive 백업 / 복원 ───────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+struct DriveFileList {
+    files: Vec<DriveFile>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DriveFile {
+    id: String,
+}
+
+#[derive(Debug, Serialize)]
+struct DriveCreateMeta {
+    name: String,
+    #[serde(rename = "mimeType")]
+    mime_type: String,
+}
+
+async fn drive_find_backup(access_token: &str) -> Result<Option<String>, String> {
+    let client = reqwest::Client::new();
+    let q = format!("name='{}' and trashed=false", BACKUP_FILENAME);
+    let resp = client
+        .get(DRIVE_FILES_URL)
+        .bearer_auth(access_token)
+        .query(&[("q", q.as_str()), ("spaces", "drive"), ("fields", "files(id)")])
+        .send()
+        .await
+        .map_err(|e| format!("drive list: {e}"))?;
+    if !resp.status().is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("drive list failed: {text}"));
+    }
+    let list: DriveFileList = resp.json().await.map_err(|e| format!("drive list parse: {e}"))?;
+    Ok(list.files.into_iter().next().map(|f| f.id))
+}
+
+#[tauri::command]
+pub async fn drive_backup_db(
+    app: tauri::AppHandle,
+    client_id: String,
+    client_secret: String,
+) -> Result<String, String> {
+    // 액세스 토큰 갱신
+    let tokens = google_get_access_token(client_id, client_secret).await?;
+    let access_token = tokens.access_token;
+
+    // DB 파일 읽기
+    let db_path: PathBuf = app
+        .path()
+        .app_data_dir()
+        .map(|p| p.join("mallbook.db"))
+        .map_err(|e: tauri::Error| e.to_string())?;
+    let db_bytes = std::fs::read(&db_path).map_err(|e| format!("db read: {e}"))?;
+
+    let client = reqwest::Client::new();
+
+    // 기존 백업 파일 ID 조회
+    let existing_id = drive_find_backup(&access_token).await?;
+
+    if let Some(file_id) = existing_id {
+        // 기존 파일 업데이트 (PATCH)
+        let url = format!("{DRIVE_UPLOAD_URL}/{file_id}?uploadType=media");
+        let resp = client
+            .patch(&url)
+            .bearer_auth(&access_token)
+            .header("Content-Type", "application/x-sqlite3")
+            .body(db_bytes)
+            .send()
+            .await
+            .map_err(|e| format!("drive update: {e}"))?;
+        if !resp.status().is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("drive update failed: {text}"));
+        }
+    } else {
+        // 새 파일 생성 (multipart)
+        let boundary = "mallbook_boundary_abc123";
+        let meta = serde_json::to_string(&DriveCreateMeta {
+            name: BACKUP_FILENAME.to_string(),
+            mime_type: "application/x-sqlite3".to_string(),
+        })
+        .map_err(|e| e.to_string())?;
+
+        let mut body: Vec<u8> = Vec::new();
+        body.extend_from_slice(format!("--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n").as_bytes());
+        body.extend_from_slice(meta.as_bytes());
+        body.extend_from_slice(format!("\r\n--{boundary}\r\nContent-Type: application/x-sqlite3\r\n\r\n").as_bytes());
+        body.extend_from_slice(&db_bytes);
+        body.extend_from_slice(format!("\r\n--{boundary}--").as_bytes());
+
+        let resp = client
+            .post(format!("{DRIVE_UPLOAD_URL}?uploadType=multipart"))
+            .bearer_auth(&access_token)
+            .header("Content-Type", format!("multipart/related; boundary={boundary}"))
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| format!("drive create: {e}"))?;
+        if !resp.status().is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("drive create failed: {text}"));
+        }
+    }
+
+    Ok("백업이 완료되었습니다.".to_string())
+}
+
+#[tauri::command]
+pub async fn drive_restore_db(
+    app: tauri::AppHandle,
+    client_id: String,
+    client_secret: String,
+) -> Result<String, String> {
+    let tokens = google_get_access_token(client_id, client_secret).await?;
+    let access_token = tokens.access_token;
+
+    let file_id = drive_find_backup(&access_token)
+        .await?
+        .ok_or_else(|| "드라이브에 백업 파일이 없습니다.".to_string())?;
+
+    let client = reqwest::Client::new();
+    let url = format!("{DRIVE_FILES_URL}/{file_id}?alt=media");
+    let resp = client
+        .get(&url)
+        .bearer_auth(&access_token)
+        .send()
+        .await
+        .map_err(|e| format!("drive download: {e}"))?;
+    if !resp.status().is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("drive download failed: {text}"));
+    }
+    let bytes = resp.bytes().await.map_err(|e| format!("drive read bytes: {e}"))?;
+
+    let db_path: PathBuf = app
+        .path()
+        .app_data_dir()
+        .map(|p| p.join("mallbook.db"))
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    // 현재 DB를 .bak으로 임시 보존 후 덮어쓰기
+    let bak_path = db_path.with_extension("db.bak");
+    if db_path.exists() {
+        std::fs::copy(&db_path, &bak_path).map_err(|e| format!("bak copy: {e}"))?;
+    }
+    std::fs::write(&db_path, &bytes).map_err(|e| format!("db write: {e}"))?;
+
+    Ok("복원이 완료되었습니다. 앱을 재시작하면 변경사항이 적용됩니다.".to_string())
 }

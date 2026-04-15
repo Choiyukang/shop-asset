@@ -212,6 +212,8 @@ pub fn run() {
             google::google_get_access_token,
             google::google_disconnect,
             google::google_is_connected,
+            google::drive_backup_db,
+            google::drive_restore_db,
             bot_set_token,
             bot_get_token,
             bot_start_if_configured,
