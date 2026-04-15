@@ -20,7 +20,7 @@ import type {
 } from "@/types";
 import { splitVat } from "@/lib/tax";
 import { uuid } from "@/lib/utils";
-import { appendTransactionRow, ensureSheetHeader, clearSheet, readSheetRows } from "@/lib/google";
+import { appendTransactionRow, ensureSheetHeader, readSheetRows, getSheetTabs, writeTabRows } from "@/lib/google";
 
 let dbPromise: Promise<Database> | null = null;
 
@@ -385,7 +385,7 @@ export async function createTransaction(
     if (user?.google_sheet_id) {
       await ensureSheetHeader({
         sheet_id: user.google_sheet_id,
-        tab: user.google_sheet_tab || "Transactions",
+        tab: input.date.slice(0, 7),
       });
       const cp = input.counterparty_id
         ? (await listCounterparties()).find((c) => c.id === input.counterparty_id)
@@ -408,7 +408,7 @@ export async function createTransaction(
       await appendTransactionRow(
         {
           sheet_id: user.google_sheet_id,
-          tab: user.google_sheet_tab || "Transactions",
+          tab: input.date.slice(0, 7),
         },
         {
           date: input.date,
@@ -480,7 +480,7 @@ export async function syncTransactionToSheet(txnId: string): Promise<void> {
   await appendTransactionRow(
     {
       sheet_id: user.google_sheet_id,
-      tab: user.google_sheet_tab || "Transactions",
+      tab: txn.date.slice(0, 7),
     },
     {
       date: txn.date,
@@ -514,59 +514,66 @@ export async function syncAllTransactions(
   if (!user?.google_sheet_id) {
     throw new Error("구글시트가 설정되지 않았습니다.");
   }
-  const target = {
-    sheet_id: user.google_sheet_id,
-    tab: user.google_sheet_tab || "Transactions",
-  };
+  const sheetId = user.google_sheet_id;
+  const HEADER = ["날짜", "유형", "거래처", "분류", "상품내역", "수수료", "금액", "결제상태", "메모"];
 
-  // 시트 비우고 헤더부터 새로 작성
-  await clearSheet(target);
-  await ensureSheetHeader(target);
-
-  // 전체 거래를 날짜순으로 올리기
   const rows = await db.select<RawTransaction[]>(
     "SELECT * FROM transactions ORDER BY date ASC",
   );
   const total = rows.length;
-  let success = 0;
-  let failed = 0;
   const counterparties = await listCounterparties();
   const categories = await listCategories();
   const cpMap = new Map(counterparties.map((c) => [c.id, c]));
   const catMap = new Map(categories.map((c) => [c.id, c]));
 
-  for (let i = 0; i < rows.length; i++) {
-    const raw = rows[i]!;
-    const txn = mapTransaction(raw);
-    try {
-      const items = txn.type !== "expense" ? await listTransactionItems(txn.id) : [];
-      const itemsSummary = items
-        .map((it) => {
-          const name = it.product_name ?? it.product_id;
-          const color = it.product_color ? ` ${it.product_color}` : "";
-          return `${name}${color}×${it.quantity}`;
-        })
-        .join(", ");
-      await appendTransactionRow(target, {
-        date: txn.date,
-        type: typeKo(txn.type),
-        counterparty: cpMap.get(txn.counterparty_id ?? "")?.name ?? "",
-        category: catMap.get(txn.category_id)?.name ?? "",
-        items_summary: itemsSummary,
-        commission_amount: Math.trunc(txn.commission_amount),
-        amount: Math.trunc(txn.amount),
-        payment_status: txn.payment_status,
-        memo: txn.memo ?? "",
-      });
-      await db.execute(
-        "UPDATE transactions SET synced_to_sheet = 1 WHERE id = ?",
-        [txn.id],
-      );
-      success++;
-    } catch {
-      failed++;
+  // 월별로 그룹화
+  const byMonth = new Map<string, RawTransaction[]>();
+  for (const raw of rows) {
+    const month = raw.date.slice(0, 7); // "2026-04"
+    if (!byMonth.has(month)) byMonth.set(month, []);
+    byMonth.get(month)!.push(raw);
+  }
+
+  let success = 0;
+  let failed = 0;
+  let done = 0;
+
+  for (const [month, monthRows] of byMonth) {
+    const dataRows: string[][] = [];
+    for (const raw of monthRows) {
+      const txn = mapTransaction(raw);
+      try {
+        const items = txn.type !== "expense" ? await listTransactionItems(txn.id) : [];
+        const itemsSummary = items
+          .map((it) => {
+            const name = it.product_name ?? it.product_id;
+            const color = it.product_color ? ` ${it.product_color}` : "";
+            return `${name}${color}×${it.quantity}`;
+          })
+          .join(", ");
+        dataRows.push([
+          txn.date,
+          typeKo(txn.type),
+          cpMap.get(txn.counterparty_id ?? "")?.name ?? "",
+          catMap.get(txn.category_id)?.name ?? "",
+          itemsSummary,
+          String(Math.trunc(txn.commission_amount)),
+          String(Math.trunc(txn.amount)),
+          txn.payment_status === "paid" ? "완료" : "외상",
+          txn.memo ?? "",
+        ]);
+        success++;
+      } catch {
+        failed++;
+      }
+      done++;
+      onProgress?.(done, total);
     }
-    onProgress?.(i + 1, total);
+    await writeTabRows(sheetId, month, HEADER, dataRows);
+    await db.execute(
+      "UPDATE transactions SET synced_to_sheet = 1 WHERE date LIKE ?",
+      [`${month}%`],
+    );
   }
   return { success, failed };
 }
@@ -579,12 +586,22 @@ export async function restoreFromSheet(
   if (!user?.google_sheet_id) {
     throw new Error("구글시트가 설정되지 않았습니다.");
   }
-  const target = {
-    sheet_id: user.google_sheet_id,
-    tab: user.google_sheet_tab || "Transactions",
-  };
+  const sheetId = user.google_sheet_id;
+  // YYYY-MM 패턴 탭 모두 읽기
+  const allTabs = await getSheetTabs(sheetId);
+  const monthTabs = allTabs.filter((t) => /^\d{4}-\d{2}$/.test(t)).sort();
+  // 레거시: YYYY-MM 탭이 없으면 기존 고정 탭에서도 읽기
+  const fixedTab = user.google_sheet_tab || "Transactions";
+  if (monthTabs.length === 0 && allTabs.includes(fixedTab)) {
+    monthTabs.push(fixedTab);
+  }
 
-  const sheetRows = await readSheetRows(target);
+  const allRows: string[][] = [];
+  for (const tab of monthTabs) {
+    const rows = await readSheetRows({ sheet_id: sheetId, tab });
+    allRows.push(...rows);
+  }
+  const sheetRows = allRows;
   const total = sheetRows.length;
   let restored = 0;
   let skipped = 0;
@@ -1058,3 +1075,87 @@ export async function deleteTransactionTemplate(id: string): Promise<void> {
   const db = await getDb();
   await db.execute("DELETE FROM transaction_templates WHERE id = ?", [id]);
 }
+
+// ---------- Sheet: 재고 탭 동기화 ----------
+export async function syncStockToSheet(): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user?.google_sheet_id) throw new Error("구글시트가 설정되지 않았습니다.");
+  const products = await listProducts();
+  const HEADER = ["상품명", "색상", "재고", "사입가", "판매가", "마진율", "미송여부", "입고예정일"];
+  const dataRows: string[][] = products.map((p) => {
+    const margin =
+      p.sale_price && p.purchase_price && p.purchase_price > 0
+        ? `${Math.round(((p.sale_price - p.purchase_price) / p.purchase_price) * 100)}%`
+        : "";
+    return [
+      p.name,
+      p.color ?? "",
+      String(p.stock),
+      p.purchase_price != null ? String(p.purchase_price) : "",
+      p.sale_price != null ? String(p.sale_price) : "",
+      margin,
+      p.is_pending_delivery ? "미송" : "",
+      p.expected_arrival_date ?? "",
+    ];
+  });
+  await writeTabRows(user.google_sheet_id, "재고", HEADER, dataRows);
+}
+
+// ---------- Sheet: 거래처 요약 탭 ----------
+export async function syncSummaryToSheet(): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user?.google_sheet_id) throw new Error("구글시트가 설정되지 않았습니다.");
+  const db = await getDb();
+
+  type SummaryRow = { name: string; total_sales: number; total_purchase: number; pending: number };
+  const rows = await db.select<SummaryRow[]>(`
+    SELECT
+      c.name,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.amount ELSE 0 END), 0) AS total_sales,
+      COALESCE(SUM(CASE WHEN t.type = 'purchase' THEN t.amount ELSE 0 END), 0) AS total_purchase,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' AND t.payment_status = 'pending' THEN t.amount ELSE 0 END), 0) AS pending
+    FROM counterparties c
+    LEFT JOIN transactions t ON t.counterparty_id = c.id
+    GROUP BY c.id, c.name
+    ORDER BY total_sales DESC
+  `);
+
+  const HEADER = ["거래처", "총 판매", "총 구매", "미수금"];
+  const dataRows: string[][] = rows.map((r) => [
+    r.name,
+    String(Math.trunc(r.total_sales)),
+    String(Math.trunc(r.total_purchase)),
+    String(Math.trunc(r.pending)),
+  ]);
+  await writeTabRows(user.google_sheet_id, "요약", HEADER, dataRows);
+}
+
+// ---------- Sheet: 정산서 탭 내보내기 ----------
+export async function exportStatementToSheet(
+  counterpartyId: string,
+  year: number,
+  month: number,
+): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user?.google_sheet_id) throw new Error("구글시트가 설정되지 않았습니다.");
+  const mm = String(month).padStart(2, "0");
+  const monthStr = `${year}-${mm}`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const startDate = `${monthStr}-01`;
+  const endDate = `${monthStr}-${String(lastDay).padStart(2, "0")}`;
+  const rows = await getCounterpartyStatement(counterpartyId, startDate, endDate);
+  const counterparties = await listCounterparties();
+  const cpName = counterparties.find((c) => c.id === counterpartyId)?.name ?? counterpartyId;
+  const tabName = `정산-${cpName}-${monthStr}`;
+
+  const HEADER = ["날짜", "유형", "상품내역", "금액", "결제상태"];
+  const dataRows: string[][] = rows.map((r) => [
+    r.date,
+    r.type === "purchase" ? "구매" : r.type === "sale" ? "판매" : "지출",
+    r.memo,
+    String(Math.trunc(r.amount)),
+    r.payment_status === "paid" ? "완료" : "외상",
+  ]);
+  await writeTabRows(user.google_sheet_id, tabName, HEADER, dataRows);
+}
+

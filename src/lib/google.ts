@@ -213,3 +213,54 @@ export async function appendTransactionRow(
     throw new Error(`Sheets append failed (${resp.status}): ${text}`);
   }
 }
+
+/**
+ * 스프레드시트의 모든 탭 이름 반환
+ */
+export async function getSheetTabs(sheetId: string): Promise<string[]> {
+  const token = await getAccessToken();
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+    sheetId,
+  )}?fields=sheets.properties.title`;
+  const resp = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`탭 목록 조회 실패 (${resp.status}): ${text}`);
+  }
+  const data = await resp.json();
+  return ((data.sheets ?? []) as { properties: { title: string } }[]).map(
+    (s) => s.properties.title,
+  );
+}
+
+/**
+ * 특정 탭을 초기화하고 헤더+데이터를 한번에 씀
+ */
+export async function writeTabRows(
+  sheetId: string,
+  tab: string,
+  headerRow: string[],
+  dataRows: string[][],
+): Promise<void> {
+  await clearSheet({ sheet_id: sheetId, tab });
+  const token = await getAccessToken();
+  const range = `${encodeURIComponent(tab)}!A1`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+    sheetId,
+  )}/values/${range}?valueInputOption=USER_ENTERED`;
+  const values = [headerRow, ...dataRows];
+  const resp = await fetch(url, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ values }),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`탭 쓰기 실패 (${resp.status}): ${text}`);
+  }
+}

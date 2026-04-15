@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/ui/field";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getCurrentUser, updateUser, resetSheetSync, syncAllTransactions, restoreFromSheet, exportAllData, importAllData } from "@/lib/db";
+import { getCurrentUser, updateUser, resetSheetSync, syncAllTransactions, restoreFromSheet, exportAllData, importAllData, syncStockToSheet, syncSummaryToSheet } from "@/lib/db";
 import type { TaxType, User } from "@/types";
 import {
   connectGoogle,
@@ -33,7 +33,6 @@ export function SettingsPage() {
   const [googleError, setGoogleError] = useState<string | null>(null);
   const [googleStatus, setGoogleStatus] = useState<string | null>(null);
   const [sheetInput, setSheetInput] = useState("");
-  const [sheetTab, setSheetTab] = useState("Transactions");
   const clientIdAvailable = hasGoogleClientId();
 
   useEffect(() => {
@@ -46,7 +45,6 @@ export function SettingsPage() {
           setBusinessNumber(u.business_number ?? "");
           setTaxType(u.tax_type);
           setSheetInput(u.google_sheet_id ?? "");
-          setSheetTab(u.google_sheet_tab ?? "Transactions");
           setGoogleEmail(u.google_email ?? "");
           setSalesGoal(u.monthly_sales_goal ?? 0);
         }
@@ -137,6 +135,32 @@ export function SettingsPage() {
 
   const [syncProgress, setSyncProgress] = useState<string | null>(null);
 
+  const onSyncStock = async () => {
+    setGoogleBusy(true);
+    setSyncProgress("재고 동기화 중…");
+    try {
+      await syncStockToSheet();
+      setSyncProgress("재고 탭 동기화 완료");
+    } catch (e) {
+      setSyncProgress(e instanceof Error ? e.message : "오류 발생");
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
+
+  const onSyncSummary = async () => {
+    setGoogleBusy(true);
+    setSyncProgress("요약 동기화 중…");
+    try {
+      await syncSummaryToSheet();
+      setSyncProgress("거래처 요약 탭 동기화 완료");
+    } catch (e) {
+      setSyncProgress(e instanceof Error ? e.message : "오류 발생");
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
+
   // 백업/복원
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
@@ -158,23 +182,19 @@ export function SettingsPage() {
     try {
       const id = parseSheetId(sheetInput);
       const prevId = user?.google_sheet_id;
-      const prevTab = user?.google_sheet_tab;
-      const tab = sheetTab.trim() || "Transactions";
       await updateUser({
         google_sheet_id: id || null,
-        google_sheet_tab: tab,
       });
       // 시트가 변경되면 동기화 상태 리셋
-      if (id && (prevId !== id || prevTab !== tab)) {
+      if (id && prevId !== id) {
         await resetSheetSync();
       }
       const u = await getCurrentUser();
       if (u) {
         setUser(u);
         setSheetInput(u.google_sheet_id ?? "");
-        setSheetTab(u.google_sheet_tab ?? "Transactions");
       }
-      const msg = id && (prevId !== id || prevTab !== tab)
+      const msg = id && prevId !== id
         ? "시트 설정이 저장되었습니다. 동기화 상태가 초기화되었습니다."
         : "시트 설정이 저장되었습니다.";
       setGoogleStatus(msg);
@@ -456,17 +476,27 @@ export function SettingsPage() {
                     disabled={!googleConnected}
                   />
                 </Field>
-                <Field label="탭 이름" required>
-                  <Input
-                    value={sheetTab}
-                    onChange={(e) => setSheetTab(e.target.value)}
-                    placeholder="Transactions"
-                    disabled={!googleConnected}
-                  />
-                </Field>
                 <div className="rounded-md border border-neutral-100 bg-neutral-50 px-3 py-2 text-xs text-neutral-500 space-y-1">
                   <p><span className="font-medium text-neutral-700">시트에서 복원</span> — 구글시트에 저장된 데이터를 앱으로 불러옵니다. 기기를 바꾸거나 앱을 재설치했을 때 사용하세요.</p>
                   <p><span className="font-medium text-neutral-700">전체 동기화</span> — 앱의 모든 거래 내역을 구글시트에 덮어씁니다. 시트 내용이 달라졌을 때 앱 기준으로 다시 맞출 때 사용하세요.</p>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={googleBusy || !googleConnected || !user?.google_sheet_id}
+                    onClick={onSyncStock}
+                  >
+                    {syncProgress === "재고 동기화 중…" || syncProgress === "재고 탭 동기화 완료" ? syncProgress : "재고 탭 동기화"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={googleBusy || !googleConnected || !user?.google_sheet_id}
+                    onClick={onSyncSummary}
+                  >
+                    {syncProgress === "요약 동기화 중…" || syncProgress === "거래처 요약 탭 동기화 완료" ? syncProgress : "거래처 요약 동기화"}
+                  </Button>
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button
@@ -483,7 +513,7 @@ export function SettingsPage() {
                     disabled={googleBusy || !googleConnected || !user?.google_sheet_id}
                     onClick={onSyncAll}
                   >
-                    {syncProgress && !syncProgress.includes("복원") ? syncProgress : "전체 동기화"}
+                    {syncProgress && !syncProgress.includes("복원") && syncProgress !== "재고 동기화 중…" && syncProgress !== "재고 탭 동기화 완료" && syncProgress !== "요약 동기화 중…" && syncProgress !== "거래처 요약 탭 동기화 완료" ? syncProgress : "전체 동기화"}
                   </Button>
                   <Button type="submit" disabled={googleBusy || !googleConnected}>
                     {googleBusy ? "저장 중…" : "시트 설정 저장"}

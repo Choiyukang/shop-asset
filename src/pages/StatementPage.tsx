@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/ui/field";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { listCounterparties, getCounterpartyStatement } from "@/lib/db";
+import { listCounterparties, getCounterpartyStatement, exportStatementToSheet } from "@/lib/db";
 import type { StatementRow } from "@/lib/db";
 import { formatKRW } from "@/lib/utils";
 import type { Counterparty } from "@/types";
@@ -60,6 +60,8 @@ export function StatementPage() {
   const [fetched, setFetched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sheetExporting, setSheetExporting] = useState(false);
+  const [sheetMsg, setSheetMsg] = useState<string | null>(null);
 
   useEffect(() => {
     listCounterparties().then((list) => {
@@ -89,6 +91,20 @@ export function StatementPage() {
       setLoading(false);
     }
   }
+
+  const onExportToSheet = async () => {
+    if (!cpId) return;
+    setSheetExporting(true);
+    setSheetMsg(null);
+    try {
+      await exportStatementToSheet(cpId, year, month);
+      setSheetMsg("시트 탭 내보내기 완료");
+    } catch (e) {
+      setSheetMsg(e instanceof Error ? e.message : "내보내기 실패");
+    } finally {
+      setSheetExporting(false);
+    }
+  };
 
   function handleExport() {
     if (!selectedCp) return;
@@ -197,14 +213,28 @@ export function StatementPage() {
                 <CardTitle>
                   {selectedCp?.name} · {year}년 {month}월 ({rows.length}건)
                 </CardTitle>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleExport}
-                  disabled={rows.length === 0}
-                >
-                  CSV 내보내기
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleExport}
+                    disabled={rows.length === 0}
+                  >
+                    CSV 내보내기
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={onExportToSheet}
+                    disabled={sheetExporting || rows.length === 0}
+                  >
+                    {sheetExporting ? "내보내는 중…" : "시트로 내보내기"}
+                  </Button>
+                </div>
+                {sheetMsg && (
+                  <p className="text-xs text-neutral-500 mt-1">{sheetMsg}</p>
+                )}
               </div>
             </CardHeader>
             <CardContent className="p-0">
