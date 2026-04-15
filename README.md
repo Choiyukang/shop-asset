@@ -1,9 +1,9 @@
 # MallBook
 
 쇼핑몰 사장님을 위한 자산관리 데스크톱 앱.
-거래·재고·세금·현금흐름을 로컬 SQLite에 저장하고, 구글시트에 자동으로 동기화합니다.
+거래·재고·세금·현금흐름을 로컬 SQLite에 저장하고, 구글시트 동기화 및 텔레그램 봇으로 언제 어디서든 조회할 수 있습니다.
 
-Tauri 2 · React 19 · TypeScript · Vite · SQLite · Google Sheets API
+Tauri 2 · React 19 · TypeScript · Vite · SQLite · Google Sheets API · Telegram Bot API
 
 ---
 
@@ -11,10 +11,15 @@ Tauri 2 · React 19 · TypeScript · Vite · SQLite · Google Sheets API
 
 - **거래 관리** — 구매/판매/지출 입력, 거래처·분류별 필터, 외상·미수금 추적
 - **상품/재고** — 상품별 깔(컬러)·사입가·판매가 관리. 거래 입력 시 재고 자동 증감
-- **거래처·수수료** — 거래처별 기본 수수료율, 건별 오버라이드. "오늘 삼촌에게 줄 돈" 대시보드
-- **부가세 자동 계산** — 거래 저장 시 공급가/부가세 자동 분리, 환급 여부 판정
-- **구글시트 양방향 동기화** — 거래 저장 시 자동 append, 시트 → 앱 복원, 전체 재동기화
-- **로컬 우선** — 인터넷 없어도 모든 기능 동작. 시트 연동은 선택
+- **거래처·외상 장부** — 거래처별 미결제 외상 내역 조회 및 건별 정산 처리
+- **부가세 신고** — 분기별 신고 기간 선택 → 공급가/부가세 내역 조회 + CSV 내보내기
+- **월별 손익 리포트** — 최근 3/6/12개월 매출·지출·순이익 차트 + CSV 내보내기
+- **대시보드 위젯** — 현금흐름 예측, 30일+ 미수금, 재고 부족, 부가세 D-Day
+- **OS 알림** — 앱 시작 시 재고 5개 이하·30일 이상 미수금 자동 알림
+- **구글시트 연동** — 거래 저장 시 자동 append, 시트 → 앱 복원, 전체 재동기화
+- **텔레그램 봇** — `/today /month /unpaid /due /stock /tax` 명령어로 외부에서 조회
+- **JSON 백업/복원** — 전체 DB를 JSON으로 내보내고, 다른 기기에서 복원
+- **로컬 우선** — 인터넷 없어도 모든 기능 동작. 시트·봇 연동은 선택
 
 ---
 
@@ -24,7 +29,8 @@ Tauri 2 · React 19 · TypeScript · Vite · SQLite · Google Sheets API
    - **Windows**: `MallBook_x.y.z_x64_en-US.msi`
    - **macOS (Apple Silicon/Intel 공용)**: `MallBook_x.y.z_universal.dmg`
 2. 더블클릭 설치 → 실행
-3. **설정 > 구글시트 연동**에서 "구글 계정 연결" 클릭 → 구글 로그인 → 시트 URL/ID 저장
+3. (선택) **설정 > 구글시트 연동**에서 구글 계정 연결 → 시트 URL/ID 저장
+4. (선택) **설정 > 텔레그램 봇 연동**에서 BotFather 토큰 입력
 
 > macOS에서 "확인되지 않은 개발자" 경고가 뜨면 시스템 설정 > 개인정보 보호 및 보안에서 "그래도 열기"를 눌러 주세요.
 > 윈도우에서 SmartScreen 경고가 뜨면 "추가 정보 > 실행"을 눌러 주세요.
@@ -94,13 +100,32 @@ VITE_GOOGLE_CLIENT_SECRET=GOCSPX-xxxxx
 
 ---
 
+## 텔레그램 봇 설정
+
+1. 텔레그램에서 [@BotFather](https://t.me/BotFather) → `/newbot` → 토큰 발급
+2. MallBook **설정 > 텔레그램 봇 연동**에서 토큰 입력 후 저장
+3. 앱이 실행 중일 때 봇에게 다음 명령어를 보내면 됩니다:
+
+| 명령어 | 내용 |
+|--------|------|
+| `/today` | 오늘 매출·지출·순이익 요약 |
+| `/month` | 이번달 매출·지출·순이익 현황 |
+| `/unpaid` | 판매 미수금 (외상 받을 돈) 목록 |
+| `/due` | 오늘 줄 돈 (매입 외상) 목록 |
+| `/stock` | 재고 5개 이하 상품 목록 |
+| `/tax` | 부가세 신고 기한 및 예상 납부세액 |
+
+> 봇 토큰은 키체인(macOS Keychain / Windows Credential Store)에 암호화 저장됩니다.
+
+---
+
 ## 자동 배포 (GitHub Actions)
 
 `v*` 패턴의 태그를 푸시하면 macOS(universal)와 Windows 인스톨러가 병렬로 빌드되어 **Draft Release**에 자동 업로드됩니다.
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.1
+git push origin main --tags
 ```
 
 - 진행 상황: [Actions 탭](https://github.com/Choiyukang/shop-asset/actions)
@@ -113,31 +138,37 @@ git push origin v0.1.0
 
 ```
 shop-asset/
-├── PRD/                      # 제품 기획 문서 (PRD, 데이터 모델, Phase 계획)
 ├── src/                      # React 프론트엔드
-│   ├── pages/                # 화면 (Dashboard, Transactions, Products, Counterparties, Settings)
+│   ├── pages/
+│   │   ├── DashboardPage.tsx       # 대시보드 위젯
+│   │   ├── TransactionsPage.tsx    # 거래 목록/입력
+│   │   ├── ProductsPage.tsx        # 상품/재고
+│   │   ├── CounterpartiesPage.tsx  # 거래처 + 외상 장부
+│   │   ├── TaxReportPage.tsx       # 부가세 신고
+│   │   ├── PnlPage.tsx             # 월별 손익 리포트
+│   │   └── SettingsPage.tsx        # 설정 (구글·봇·백업)
 │   ├── components/           # UI 컴포넌트
 │   ├── stores/               # Zustand 스토어
 │   ├── lib/                  # db.ts, google.ts, tax.ts, utils.ts
 │   └── types/                # TypeScript 타입 정의
 ├── src-tauri/                # Rust 백엔드 (Tauri)
 │   ├── src/
-│   │   ├── lib.rs            # Tauri 앱 엔트리, 플러그인 + 커맨드 등록
-│   │   └── google.rs         # OAuth 루프백 + PKCE + 키체인 저장
-│   └── migrations/           # SQLite 마이그레이션 (v1, v2, v3)
+│   │   ├── lib.rs            # Tauri 커맨드 등록 (봇 생명주기, 알림)
+│   │   ├── google.rs         # OAuth 루프백 + PKCE + 키체인 저장
+│   │   └── telegram.rs       # Telegram long-polling 봇
+│   └── migrations/           # SQLite 마이그레이션 (v1~v4)
 └── .github/workflows/        # GitHub Actions (release.yml)
 ```
-
-자세한 도메인 설계는 `PRD/02_DATA_MODEL.md`를, 로드맵은 `PRD/03_PHASES.md`를 참고하세요.
 
 ---
 
 ## 로드맵
 
-- ✅ **Phase 1 (MVP)** — 거래 CRUD, 부가세 자동 계산, 구글시트 쓰기, 대시보드
-- ✅ **Phase 1.5** — 상품/재고, 거래처 수수료, "오늘 삼촌에게 줄 돈" 카드
-- 🟡 **Phase 2** — 세금 리포트(분기별 CSV/PDF), 현금흐름 타임라인, 시트 양방향 충돌 처리
-- ⚪ **Phase 3** — 월/분기 손익 리포트, 영수증 이미지 첨부, 드라이브 자동 백업
+- ✅ **v0.1 (MVP)** — 거래 CRUD, 부가세 자동 계산, 구글시트 연동, 대시보드
+- ✅ **v0.1.5** — 상품/재고, 거래처 수수료, "오늘 삼촌에게 줄 돈" 카드, 현금흐름 예측
+- ✅ **v0.2.0** — 부가세 신고 페이지(CSV), 텔레그램 봇, 설정 UX 개선, 화면 확대
+- ✅ **v0.2.1** — OS 알림, 월별 손익 리포트, 거래처 외상 장부, JSON 백업/복원
+- ⚪ **v0.3** — 영수증 이미지 첨부, PDF 리포트, 드라이브 자동 백업
 
 ---
 
