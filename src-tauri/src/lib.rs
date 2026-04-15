@@ -183,6 +183,12 @@ pub fn run() {
             sql: include_str!("../migrations/20260415000006_product_counterparty.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "product purchase date",
+            sql: include_str!("../migrations/20260415000007_product_purchase_date.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

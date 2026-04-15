@@ -17,6 +17,7 @@ const emptyForm: ProductInput = {
   stock: 0,
   memo: "",
   counterparty_id: null,
+  purchase_date: null,
 };
 
 export function ProductsPage() {
@@ -52,6 +53,7 @@ export function ProductsPage() {
       stock: p.stock,
       memo: p.memo ?? "",
       counterparty_id: p.counterparty_id ?? null,
+      purchase_date: p.purchase_date ?? null,
     });
     setFormError(null);
     setOpen(true);
@@ -74,6 +76,7 @@ export function ProductsPage() {
         stock: Number(form.stock) || 0,
         memo: form.memo?.trim() || null,
         counterparty_id: form.counterparty_id ?? null,
+        purchase_date: form.purchase_date ?? null,
       };
       if (editingId) {
         await update(editingId, payload);
@@ -136,6 +139,7 @@ export function ProductsPage() {
             <tr>
               <th className="px-4 py-3 font-medium">상품명</th>
               <th className="px-4 py-3 font-medium">거래처</th>
+              <th className="px-4 py-3 font-medium">사입날짜</th>
               <th className="px-4 py-3 font-medium">깔(컬러)</th>
               <th className="px-4 py-3 font-medium">사입가</th>
               <th className="px-4 py-3 font-medium">판매가</th>
@@ -148,14 +152,14 @@ export function ProductsPage() {
           <tbody>
             {loading && products.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-neutral-500">
+                <td colSpan={10} className="px-4 py-8 text-center text-neutral-500">
                   불러오는 중…
                 </td>
               </tr>
             )}
             {!loading && products.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-neutral-500">
+                <td colSpan={10} className="px-4 py-8 text-center text-neutral-500">
                   등록된 상품이 없습니다.
                 </td>
               </tr>
@@ -166,6 +170,7 @@ export function ProductsPage() {
                 <td className="px-4 py-3 text-neutral-500 text-sm">
                   {counterparties.find(c => c.id === p.counterparty_id)?.name ?? "—"}
                 </td>
+                <td className="px-4 py-3 text-neutral-500">{p.purchase_date ?? "—"}</td>
                 <td className="px-4 py-3 text-neutral-700">{p.color ?? "—"}</td>
                 <td className="px-4 py-3 text-neutral-700">{formatKRW(p.purchase_price)}</td>
                 <td className="px-4 py-3 text-neutral-700">{formatKRW(p.sale_price)}</td>
@@ -253,6 +258,13 @@ export function ProductsPage() {
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </Select>
+          </Field>
+          <Field label="사입날짜" hint="이 상품을 처음 사입한 날짜">
+            <Input
+              type="date"
+              value={form.purchase_date ?? ""}
+              onChange={(e) => setForm({ ...form, purchase_date: e.target.value || null })}
+            />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="사입가 (원)">

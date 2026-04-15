@@ -130,8 +130,8 @@ export async function createProduct(input: ProductInput): Promise<Product> {
   const db = await getDb();
   const id = uuid("prd");
   await db.execute(
-    `INSERT INTO products (id, name, color, purchase_price, sale_price, stock, memo, counterparty_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, color, purchase_price, sale_price, stock, memo, counterparty_id, purchase_date)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.name,
@@ -141,6 +141,7 @@ export async function createProduct(input: ProductInput): Promise<Product> {
       Math.trunc(input.stock),
       input.memo,
       input.counterparty_id ?? null,
+      input.purchase_date ?? null,
     ],
   );
   const rows = await db.select<Product[]>(
