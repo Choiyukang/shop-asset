@@ -691,7 +691,7 @@ export function ProductsPage() {
           <p className="text-sm text-neutral-600">
             <strong>{deleteTarget?.name}{deleteTarget?.color ? ` (${deleteTarget.color})` : ""}</strong> 상품을 삭제할까요?
           </p>
-          <p className="text-xs text-orange-600">거래 금액은 그대로 유지되지만, 거래내역의 상품 항목 연결이 끊어집니다.</p>
+          <p className="text-xs text-neutral-500">기존 거래내역에서 상품명은 그대로 유지되고, 상품 목록에서만 숨겨집니다.</p>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setDeleteTarget(null)}>
               취소

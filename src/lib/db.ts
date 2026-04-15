@@ -133,7 +133,7 @@ export async function listCategories(): Promise<Category[]> {
 export async function listProducts(): Promise<Product[]> {
   const db = await getDb();
   const rows = await db.select<RawProduct[]>(
-    "SELECT * FROM products ORDER BY created_at DESC",
+    "SELECT * FROM products WHERE is_deleted = 0 OR is_deleted IS NULL ORDER BY created_at DESC",
   );
   return rows.map(mapProduct);
 }
@@ -187,9 +187,8 @@ export async function updateProduct(
 
 export async function deleteProduct(id: string): Promise<void> {
   const db = await getDb();
-  // 거래에 연결된 상품 항목을 먼저 제거 (거래 금액은 이미 저장돼 있으므로 금액 기록 유지)
-  await db.execute("DELETE FROM transaction_items WHERE product_id = ?", [id]);
-  await db.execute("DELETE FROM products WHERE id = ?", [id]);
+  // 소프트 삭제: 거래내역에서 상품명이 유지되도록 is_deleted만 1로 설정
+  await db.execute("UPDATE products SET is_deleted = 1 WHERE id = ?", [id]);
 }
 
 // ---------- Transaction Items ----------
@@ -774,7 +773,7 @@ export async function getOverdueReceivables(): Promise<OverdueReceivable[]> {
 export async function getLowStockProducts(threshold = 5): Promise<Product[]> {
   const db = await getDb();
   const rows = await db.select<RawProduct[]>(
-    "SELECT * FROM products WHERE stock <= ? ORDER BY stock ASC",
+    "SELECT * FROM products WHERE (is_deleted = 0 OR is_deleted IS NULL) AND stock <= ? ORDER BY stock ASC",
     [threshold],
   );
   return rows.map(mapProduct);
@@ -783,7 +782,7 @@ export async function getLowStockProducts(threshold = 5): Promise<Product[]> {
 export async function getPendingDeliveryProducts(): Promise<Product[]> {
   const db = await getDb();
   const rows = await db.select<RawProduct[]>(
-    "SELECT * FROM products WHERE is_pending_delivery = 1 OR LOWER(CAST(is_pending_delivery AS TEXT)) = 'true' ORDER BY expected_arrival_date ASC",
+    "SELECT * FROM products WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (is_pending_delivery = 1 OR LOWER(CAST(is_pending_delivery AS TEXT)) = 'true') ORDER BY expected_arrival_date ASC",
   );
   return rows.map(mapProduct);
 }
