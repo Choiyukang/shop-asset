@@ -33,5 +33,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY4RjZDOTJGNUVDNDkwOUUKUldTZWtNUmVMOG4yYUxhVkZkaitLV0x4Q1VyMFBpTXhKR1YzR3hlaHVsN0lEcHhRU3RIOTA0OXgK",
+      "endpoints": [
+        "https://github.com/Choiyukang/shop-asset/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

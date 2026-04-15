@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { UpdateBanner } from "@/components/UpdateBanner";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { DashboardPage } from "@/pages/DashboardPage";
@@ -38,7 +39,12 @@ function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  return <RouterProvider router={router} />;
+  return (
+    <>
+      <RouterProvider router={router} />
+      <UpdateBanner />
+    </>
+  );
 }
 
 export default App;
