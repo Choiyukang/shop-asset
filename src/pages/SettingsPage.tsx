@@ -402,6 +402,10 @@ export function SettingsPage() {
                     disabled={!googleConnected}
                   />
                 </Field>
+                <div className="rounded-md border border-neutral-100 bg-neutral-50 px-3 py-2 text-xs text-neutral-500 space-y-1">
+                  <p><span className="font-medium text-neutral-700">시트에서 복원</span> — 구글시트에 저장된 데이터를 앱으로 불러옵니다. 기기를 바꾸거나 앱을 재설치했을 때 사용하세요.</p>
+                  <p><span className="font-medium text-neutral-700">전체 동기화</span> — 앱의 모든 거래 내역을 구글시트에 덮어씁니다. 시트 내용이 달라졌을 때 앱 기준으로 다시 맞출 때 사용하세요.</p>
+                </div>
                 <div className="flex justify-end gap-2">
                   <Button
                     type="button"
@@ -437,9 +441,14 @@ export function SettingsPage() {
             <p className="text-sm text-neutral-600">
               봇 토큰을 저장하면 앱이 실행 중일 때 텔레그램에서 매출·미수금·재고를 조회할 수 있습니다.
             </p>
-            <div className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600">
-              <p className="font-medium text-neutral-700 mb-1">사용 가능한 명령어</p>
-              <code>/today /month /unpaid /due /stock /tax</code>
+            <div className="rounded-md border border-neutral-100 bg-neutral-50 p-3 text-xs text-neutral-600 space-y-1.5">
+              <p className="font-medium text-neutral-700 mb-2">사용 가능한 명령어</p>
+              <p><code className="rounded bg-neutral-200 px-1">/today</code> — 오늘 매출·지출·순이익 요약</p>
+              <p><code className="rounded bg-neutral-200 px-1">/month</code> — 이번달 매출·지출·순이익 현황</p>
+              <p><code className="rounded bg-neutral-200 px-1">/unpaid</code> — 판매 미수금 (외상 받을 돈) 목록</p>
+              <p><code className="rounded bg-neutral-200 px-1">/due</code> — 오늘 줄 돈 (매입 외상) 목록</p>
+              <p><code className="rounded bg-neutral-200 px-1">/stock</code> — 재고 5개 이하 상품 목록</p>
+              <p><code className="rounded bg-neutral-200 px-1">/tax</code> — 부가세 신고 기한 및 예상 납부세액</p>
             </div>
 
             {botError && (
