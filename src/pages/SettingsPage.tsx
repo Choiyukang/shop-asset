@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -51,6 +52,15 @@ export function SettingsPage() {
           setGoogleConnected(await isGoogleConnected());
         } catch {
           setGoogleConnected(false);
+        }
+        try {
+          const token = await invoke<string>("bot_get_token");
+          if (token) {
+            setBotToken(token);
+            setBotActive(true);
+          }
+        } catch {
+          // 봇 토큰 로드 실패는 무시
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "사용자 정보를 불러오지 못했습니다.");
@@ -123,6 +133,13 @@ export function SettingsPage() {
   }
 
   const [syncProgress, setSyncProgress] = useState<string | null>(null);
+
+  // 텔레그램 봇
+  const [botToken, setBotToken] = useState("");
+  const [botSaving, setBotSaving] = useState(false);
+  const [botStatus, setBotStatus] = useState<string | null>(null);
+  const [botError, setBotError] = useState<string | null>(null);
+  const [botActive, setBotActive] = useState(false);
 
   async function onSaveSheet(e: FormEvent) {
     e.preventDefault();
@@ -203,6 +220,38 @@ export function SettingsPage() {
       setGoogleError(`복원 실패: ${msg}`);
     } finally {
       setGoogleBusy(false);
+    }
+  }
+
+  async function onSaveBotToken(e: FormEvent) {
+    e.preventDefault();
+    setBotError(null);
+    setBotStatus(null);
+    setBotSaving(true);
+    try {
+      await invoke("bot_set_token", { token: botToken.trim() });
+      setBotActive(!!botToken.trim());
+      setBotStatus(botToken.trim() ? "봇이 시작되었습니다." : "봇 연결이 해제되었습니다.");
+    } catch (err) {
+      setBotError(err instanceof Error ? err.message : "봇 설정 저장에 실패했습니다.");
+    } finally {
+      setBotSaving(false);
+    }
+  }
+
+  async function onClearBotToken() {
+    setBotError(null);
+    setBotStatus(null);
+    setBotSaving(true);
+    try {
+      await invoke("bot_set_token", { token: "" });
+      setBotToken("");
+      setBotActive(false);
+      setBotStatus("봇 연결이 해제되었습니다.");
+    } catch (err) {
+      setBotError(err instanceof Error ? err.message : "봇 연결 해제에 실패했습니다.");
+    } finally {
+      setBotSaving(false);
     }
   }
 
@@ -364,6 +413,58 @@ export function SettingsPage() {
               )}
             </div>
           )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>텔레그램 봇 연동</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="max-w-md space-y-4">
+            <p className="text-sm text-neutral-600">
+              봇 토큰을 저장하면 앱이 실행 중일 때 텔레그램에서 매출·미수금·재고를 조회할 수 있습니다.
+            </p>
+            <div className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600">
+              <p className="font-medium text-neutral-700 mb-1">사용 가능한 명령어</p>
+              <code>/today /month /unpaid /due /stock /tax</code>
+            </div>
+
+            {botError && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                {botError}
+              </div>
+            )}
+            {botStatus && (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-700">
+                {botStatus}
+              </div>
+            )}
+
+            {botActive && (
+              <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+                <span className="text-emerald-700">● 봇 실행 중</span>
+                <Button type="button" variant="secondary" onClick={onClearBotToken} disabled={botSaving}>
+                  연결 해제
+                </Button>
+              </div>
+            )}
+
+            <form onSubmit={onSaveBotToken} className="space-y-3">
+              <Field label="봇 토큰" hint="BotFather에서 발급: @BotFather → /newbot">
+                <Input
+                  type="password"
+                  value={botToken}
+                  onChange={(e) => setBotToken(e.target.value)}
+                  placeholder="123456789:ABC..."
+                />
+              </Field>
+              <div className="flex justify-end">
+                <Button type="submit" disabled={botSaving || !botToken.trim()}>
+                  {botSaving ? "저장 중…" : "저장 및 시작"}
+                </Button>
+              </div>
+            </form>
+          </div>
         </CardContent>
       </Card>
     </div>

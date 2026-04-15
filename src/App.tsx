@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { DashboardPage } from "@/pages/DashboardPage";
@@ -23,6 +25,14 @@ const router = createBrowserRouter([
 ]);
 
 function App() {
+  useEffect(() => {
+    // DB 초기화 완료 후 저장된 봇 토큰이 있으면 봇 자동 시작
+    const timer = setTimeout(() => {
+      invoke("bot_start_if_configured").catch(() => {});
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
   return <RouterProvider router={router} />;
 }
 
