@@ -252,7 +252,7 @@ export function CounterpartiesPage() {
                         type="button"
                         className="rounded px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 hover:text-red-700"
                         onClick={async () => {
-                          if (!window.confirm(`"${c.name}" 거래처를 삭제합니다.\n\n거래 금액 기록은 유지되지만 거래처 연결이 끊어집니다. 삭제하시겠습니까?`)) return;
+                          if (!window.confirm(`"${c.name}" 거래처를 삭제합니다.\n\n기존 거래내역에서 거래처명은 그대로 유지됩니다. 삭제하시겠습니까?`)) return;
                           try {
                             await remove(c.id);
                           } catch (err) {

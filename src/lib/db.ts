@@ -77,7 +77,7 @@ export async function updateUser(patch: Partial<Omit<User, "id" | "created_at">>
 export async function listCounterparties(): Promise<Counterparty[]> {
   const db = await getDb();
   return db.select<Counterparty[]>(
-    "SELECT * FROM counterparties ORDER BY created_at DESC",
+    "SELECT * FROM counterparties WHERE is_deleted = 0 OR is_deleted IS NULL ORDER BY created_at DESC",
   );
 }
 
@@ -116,10 +116,8 @@ export async function updateCounterparty(
 
 export async function deleteCounterparty(id: string): Promise<void> {
   const db = await getDb();
-  // 연결된 거래·상품의 거래처 참조를 NULL로 변경 (기록 유지)
-  await db.execute("UPDATE transactions SET counterparty_id = NULL WHERE counterparty_id = ?", [id]);
-  await db.execute("UPDATE products SET counterparty_id = NULL WHERE counterparty_id = ?", [id]);
-  await db.execute("DELETE FROM counterparties WHERE id = ?", [id]);
+  // 소프트 삭제: 거래내역에서 거래처명이 유지되도록 is_deleted만 1로 설정
+  await db.execute("UPDATE counterparties SET is_deleted = 1 WHERE id = ?", [id]);
 }
 
 // ---------- Category ----------
