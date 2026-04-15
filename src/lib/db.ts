@@ -114,6 +114,14 @@ export async function updateCounterparty(
   );
 }
 
+export async function deleteCounterparty(id: string): Promise<void> {
+  const db = await getDb();
+  // 연결된 거래·상품의 거래처 참조를 NULL로 변경 (기록 유지)
+  await db.execute("UPDATE transactions SET counterparty_id = NULL WHERE counterparty_id = ?", [id]);
+  await db.execute("UPDATE products SET counterparty_id = NULL WHERE counterparty_id = ?", [id]);
+  await db.execute("DELETE FROM counterparties WHERE id = ?", [id]);
+}
+
 // ---------- Category ----------
 export async function listCategories(): Promise<Category[]> {
   const db = await getDb();

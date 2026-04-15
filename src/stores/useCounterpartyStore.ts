@@ -8,6 +8,7 @@ interface CounterpartyState {
   error: string | null;
   load: () => Promise<void>;
   add: (input: CounterpartyInput) => Promise<void>;
+  remove: (id: string) => Promise<void>;
 }
 
 export const useCounterpartyStore = create<CounterpartyState>((set, get) => ({
@@ -29,6 +30,15 @@ export const useCounterpartyStore = create<CounterpartyState>((set, get) => ({
       await get().load();
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "거래처 저장에 실패했습니다." });
+      throw e;
+    }
+  },
+  async remove(id) {
+    try {
+      await db.deleteCounterparty(id);
+      await get().load();
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "거래처 삭제에 실패했습니다." });
       throw e;
     }
   },

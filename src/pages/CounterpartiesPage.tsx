@@ -108,7 +108,7 @@ function DebtPanel({ counterparty, onSettled }: { counterparty: Counterparty; on
 }
 
 export function CounterpartiesPage() {
-  const { counterparties, load, add, loading, error } = useCounterpartyStore();
+  const { counterparties, load, add, remove, loading, error } = useCounterpartyStore();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -240,13 +240,29 @@ export function CounterpartiesPage() {
                   <td className="px-4 py-3 text-neutral-700">{c.commission_rate ?? 0}%</td>
                   <td className="px-4 py-3 text-neutral-500">{c.created_at.slice(0, 10)}</td>
                   <td className="px-4 py-3 text-neutral-500" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100"
-                      onClick={() => openEdit(c)}
-                    >
-                      편집
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100"
+                        onClick={() => openEdit(c)}
+                      >
+                        편집
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 hover:text-red-700"
+                        onClick={async () => {
+                          if (!window.confirm(`"${c.name}" 거래처를 삭제합니다.\n\n거래 금액 기록은 유지되지만 거래처 연결이 끊어집니다. 삭제하시겠습니까?`)) return;
+                          try {
+                            await remove(c.id);
+                          } catch (err) {
+                            alert(err instanceof Error ? err.message : "거래처 삭제에 실패했습니다.");
+                          }
+                        }}
+                      >
+                        삭제
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 {expandedId === c.id && (
