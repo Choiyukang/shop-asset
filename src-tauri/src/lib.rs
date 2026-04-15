@@ -177,6 +177,12 @@ pub fn run() {
             sql: include_str!("../migrations/20260415000005_goal_and_templates.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 6,
+            description: "product counterparty link",
+            sql: include_str!("../migrations/20260415000006_product_counterparty.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

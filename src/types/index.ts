@@ -46,6 +46,7 @@ export interface Product {
   sale_price: number;
   stock: number;
   memo: string | null;
+  counterparty_id: string | null;
   created_at: string;
 }
 
@@ -56,6 +57,7 @@ export interface ProductInput {
   sale_price: number;
   stock: number;
   memo: string | null;
+  counterparty_id?: string | null;
 }
 
 export interface TransactionItem {

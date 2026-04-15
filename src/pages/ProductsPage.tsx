@@ -5,6 +5,8 @@ import { Modal } from "@/components/ui/modal";
 import { Field } from "@/components/ui/field";
 import { formatKRW } from "@/lib/utils";
 import { useProductStore } from "@/stores/useProductStore";
+import { useCounterpartyStore } from "@/stores/useCounterpartyStore";
+import { Select } from "@/components/ui/select";
 import type { Product, ProductInput } from "@/types";
 
 const emptyForm: ProductInput = {
@@ -14,10 +16,12 @@ const emptyForm: ProductInput = {
   sale_price: 0,
   stock: 0,
   memo: "",
+  counterparty_id: null,
 };
 
 export function ProductsPage() {
   const { products, load, add, update, remove, loading, error } = useProductStore();
+  const { counterparties, load: loadCp } = useCounterpartyStore();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ProductInput>(emptyForm);
@@ -28,7 +32,8 @@ export function ProductsPage() {
 
   useEffect(() => {
     load();
-  }, [load]);
+    loadCp();
+  }, [load, loadCp]);
 
   function openCreate() {
     setEditingId(null);
@@ -46,6 +51,7 @@ export function ProductsPage() {
       sale_price: p.sale_price,
       stock: p.stock,
       memo: p.memo ?? "",
+      counterparty_id: p.counterparty_id ?? null,
     });
     setFormError(null);
     setOpen(true);
@@ -67,6 +73,7 @@ export function ProductsPage() {
         sale_price: Number(form.sale_price) || 0,
         stock: Number(form.stock) || 0,
         memo: form.memo?.trim() || null,
+        counterparty_id: form.counterparty_id ?? null,
       };
       if (editingId) {
         await update(editingId, payload);
@@ -128,6 +135,7 @@ export function ProductsPage() {
           <thead className="border-b border-neutral-200 bg-neutral-50 text-left text-xs uppercase text-neutral-500">
             <tr>
               <th className="px-4 py-3 font-medium">상품명</th>
+              <th className="px-4 py-3 font-medium">거래처</th>
               <th className="px-4 py-3 font-medium">깔(컬러)</th>
               <th className="px-4 py-3 font-medium">사입가</th>
               <th className="px-4 py-3 font-medium">판매가</th>
@@ -140,14 +148,14 @@ export function ProductsPage() {
           <tbody>
             {loading && products.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-neutral-500">
+                <td colSpan={9} className="px-4 py-8 text-center text-neutral-500">
                   불러오는 중…
                 </td>
               </tr>
             )}
             {!loading && products.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-neutral-500">
+                <td colSpan={9} className="px-4 py-8 text-center text-neutral-500">
                   등록된 상품이 없습니다.
                 </td>
               </tr>
@@ -155,6 +163,9 @@ export function ProductsPage() {
             {products.map((p) => (
               <tr key={p.id} className="border-b border-neutral-100 last:border-b-0">
                 <td className="px-4 py-3 font-medium text-neutral-900">{p.name}</td>
+                <td className="px-4 py-3 text-neutral-500 text-sm">
+                  {counterparties.find(c => c.id === p.counterparty_id)?.name ?? "—"}
+                </td>
                 <td className="px-4 py-3 text-neutral-700">{p.color ?? "—"}</td>
                 <td className="px-4 py-3 text-neutral-700">{formatKRW(p.purchase_price)}</td>
                 <td className="px-4 py-3 text-neutral-700">{formatKRW(p.sale_price)}</td>
@@ -231,6 +242,17 @@ export function ProductsPage() {
               onChange={(e) => setForm({ ...form, color: e.target.value })}
               placeholder="예: 블랙 / 화이트"
             />
+          </Field>
+          <Field label="기본 거래처" hint="이 상품을 주로 구매하는 삼촌/공급업체">
+            <Select
+              value={form.counterparty_id ?? ""}
+              onChange={(e) => setForm({ ...form, counterparty_id: e.target.value || null })}
+            >
+              <option value="">(선택 안 함)</option>
+              {counterparties.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </Select>
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="사입가 (원)">

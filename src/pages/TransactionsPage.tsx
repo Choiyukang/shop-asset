@@ -196,17 +196,24 @@ export function TransactionsPage() {
         ? first.purchase_price
         : first.sale_price
       : 0;
-    setForm((f) => ({
-      ...f,
-      items: [
-        ...f.items,
-        {
-          product_id: first?.id ?? "",
-          quantity: 1,
-          unit_price: defaultPrice,
-        },
-      ],
-    }));
+    setForm((f) => {
+      const newForm = {
+        ...f,
+        items: [
+          ...f.items,
+          {
+            product_id: first?.id ?? "",
+            quantity: 1,
+            unit_price: defaultPrice,
+          },
+        ],
+      };
+      // Auto-fill counterparty from product if not set
+      if (!f.counterparty_id && first?.counterparty_id) {
+        return { ...newForm, counterparty_id: first.counterparty_id, commission_overridden: false };
+      }
+      return newForm;
+    });
   }
 
   function updateItem(idx: number, patch: Partial<TransactionItemInput>) {
@@ -222,8 +229,16 @@ export function TransactionsPage() {
             f.type === "purchase" ? p.purchase_price : p.sale_price;
         }
       }
-      next[idx] = merged;
-      return { ...f, items: next };
+      const newItems = [...f.items];
+      newItems[idx] = merged;
+      // Auto-fill counterparty from new product if form counterparty_id is null
+      if (patch.product_id && !f.counterparty_id) {
+        const p = productMap.get(patch.product_id);
+        if (p?.counterparty_id) {
+          return { ...f, items: newItems, counterparty_id: p.counterparty_id, commission_overridden: false };
+        }
+      }
+      return { ...f, items: newItems };
     });
   }
 

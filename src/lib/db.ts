@@ -130,8 +130,8 @@ export async function createProduct(input: ProductInput): Promise<Product> {
   const db = await getDb();
   const id = uuid("prd");
   await db.execute(
-    `INSERT INTO products (id, name, color, purchase_price, sale_price, stock, memo)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, color, purchase_price, sale_price, stock, memo, counterparty_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.name,
@@ -140,6 +140,7 @@ export async function createProduct(input: ProductInput): Promise<Product> {
       Math.trunc(input.sale_price),
       Math.trunc(input.stock),
       input.memo,
+      input.counterparty_id ?? null,
     ],
   );
   const rows = await db.select<Product[]>(
@@ -957,6 +958,57 @@ export async function settleTransaction(transactionId: string): Promise<void> {
     "UPDATE transactions SET payment_status = 'paid' WHERE id = ?",
     [transactionId],
   );
+}
+
+// ---------- Counterparty Statement ----------
+export interface StatementRow {
+  date: string;
+  type: string;
+  category: string;
+  amount: number;
+  commission_amount: number;
+  payment_status: string;
+  memo: string;
+}
+
+export async function getCounterpartyStatement(
+  counterpartyId: string,
+  startDate: string,
+  endDate: string,
+): Promise<StatementRow[]> {
+  const db = await getDb();
+  const rows = await db.select<{
+    date: string;
+    type: string;
+    category: string;
+    amount: number;
+    commission_amount: number;
+    payment_status: string;
+    memo: string;
+  }[]>(
+    `SELECT t.date,
+            t.type,
+            COALESCE(cat.name, '') AS category,
+            t.amount,
+            t.commission_amount,
+            t.payment_status,
+            COALESCE(t.memo, '') AS memo
+       FROM transactions t
+       LEFT JOIN categories cat ON cat.id = t.category_id
+      WHERE t.counterparty_id = ?
+        AND t.date BETWEEN ? AND ?
+      ORDER BY t.date ASC`,
+    [counterpartyId, startDate, endDate],
+  );
+  return rows.map((r) => ({
+    date: r.date,
+    type: r.type,
+    category: r.category,
+    amount: Number(r.amount),
+    commission_amount: Number(r.commission_amount),
+    payment_status: r.payment_status,
+    memo: r.memo,
+  }));
 }
 
 // ---------- Transaction Templates ----------

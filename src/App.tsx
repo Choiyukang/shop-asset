@@ -8,6 +8,7 @@ import { CounterpartiesPage } from "@/pages/CounterpartiesPage";
 import { ProductsPage } from "@/pages/ProductsPage";
 import { TaxReportPage } from "@/pages/TaxReportPage";
 import { PnlPage } from "@/pages/PnlPage";
+import { StatementPage } from "@/pages/StatementPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 
 const router = createBrowserRouter([
@@ -21,6 +22,7 @@ const router = createBrowserRouter([
       { path: "counterparties", element: <CounterpartiesPage /> },
       { path: "tax", element: <TaxReportPage /> },
       { path: "pnl", element: <PnlPage /> },
+      { path: "statement", element: <StatementPage /> },
       { path: "settings", element: <SettingsPage /> },
     ],
   },
