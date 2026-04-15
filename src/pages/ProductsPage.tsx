@@ -46,6 +46,7 @@ export function ProductsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [adjustTarget, setAdjustTarget] = useState<Product | null>(null);
   const [adjustValue, setAdjustValue] = useState<number>(0);
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   function toggleGroup(name: string) {
@@ -156,12 +157,18 @@ export function ProductsPage() {
     }
   }
 
-  async function onDelete(p: Product) {
-    if (!confirm(`'${p.name}' 상품을 삭제할까요? 거래에 사용된 상품은 삭제할 수 없습니다.`)) return;
+  function onDelete(p: Product) {
+    setDeleteTarget(p);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
     try {
-      await remove(p.id);
+      await remove(deleteTarget.id);
+      setDeleteTarget(null);
     } catch (err) {
       alert(err instanceof Error ? err.message : "삭제에 실패했습니다.");
+      setDeleteTarget(null);
     }
   }
 
@@ -353,36 +360,34 @@ export function ProductsPage() {
                   if (isExpanded) {
                     for (const p of group) {
                       rows.push(
-                        <tr key={p.id} className="border-b border-neutral-100 last:border-b-0 bg-white">
-                          <td className="px-4 py-3 font-medium text-neutral-700">
-                            <div className="flex items-center gap-1.5 pl-5">
-                              <span className="text-neutral-300 text-xs">└</span>
-                              <span>{p.color ?? "기본"}</span>
+                        <tr key={p.id} className="border-b border-neutral-100 bg-neutral-50/40">
+                          <td className="px-4 py-2.5 font-medium text-neutral-700 border-l-2 border-l-neutral-200">
+                            <div className="flex items-center gap-1.5 pl-3">
+                              <span className="text-neutral-400 text-xs">└</span>
+                              <span className="text-sm">{p.color ?? "기본"}</span>
                               {p.is_pending_delivery && (
                                 <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">미송</span>
                               )}
                             </div>
                             {p.is_pending_delivery && p.expected_arrival_date && (
-                              <div className="text-xs text-amber-600 pl-10">입고 예정 {p.expected_arrival_date}</div>
+                              <div className="text-xs text-amber-600 pl-8">입고 예정 {p.expected_arrival_date}</div>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-neutral-500 text-sm">
-                            {counterparties.find(c => c.id === p.counterparty_id)?.name ?? "—"}
-                          </td>
-                          <td className="px-4 py-3 text-neutral-500">{p.purchase_date ?? "—"}</td>
-                          <td className="px-4 py-3 text-neutral-700">{p.color ?? "—"}</td>
+                          <td className="px-4 py-2.5 text-neutral-400 text-sm">—</td>
+                          <td className="px-4 py-2.5 text-neutral-500 text-sm">{p.purchase_date ?? "—"}</td>
+                          <td className="px-4 py-2.5 text-neutral-500 text-sm">{p.color ?? "—"}</td>
                           <td className="px-4 py-3 text-neutral-700">{formatKRW(p.purchase_price)}</td>
                           <td className="px-4 py-3 text-neutral-700">{formatKRW(p.sale_price)}</td>
                           {(() => {
                             if (!p.purchase_price || p.purchase_price === 0) {
-                              return <td className="px-4 py-3 text-neutral-400">—</td>;
+                              return <td className="px-4 py-2.5 text-neutral-400">—</td>;
                             }
                             const margin = Math.round(((p.sale_price - p.purchase_price) / p.purchase_price) * 100);
                             const colorClass = margin < 0 ? "text-red-600 font-semibold" : margin < 20 ? "text-amber-600" : "text-emerald-700";
-                            return <td className={`px-4 py-3 ${colorClass}`}>{margin > 0 ? "+" : ""}{margin}%</td>;
+                            return <td className={`px-4 py-2.5 ${colorClass}`}>{margin > 0 ? "+" : ""}{margin}%</td>;
                           })()}
-                          <td className="px-4 py-3 text-neutral-700">{p.stock}</td>
-                          <td className="px-4 py-3 text-neutral-500">{p.memo ?? ""}</td>
+                          <td className="px-4 py-2.5 text-neutral-700">{p.stock}</td>
+                          <td className="px-4 py-2.5 text-neutral-500">{p.memo ?? ""}</td>
                           <td className="px-4 py-3 text-neutral-500">
                             <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                               <button type="button" className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100" onClick={() => openEdit(p)}>편집</button>
@@ -659,6 +664,27 @@ export function ProductsPage() {
             </Button>
             <Button type="button" onClick={onAdjust}>
               조정
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!deleteTarget}
+        title="상품 삭제"
+        onClose={() => setDeleteTarget(null)}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-neutral-600">
+            <strong>{deleteTarget?.name}{deleteTarget?.color ? ` (${deleteTarget.color})` : ""}</strong> 상품을 삭제할까요?
+          </p>
+          <p className="text-xs text-neutral-400">거래에 사용된 상품은 삭제할 수 없습니다.</p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setDeleteTarget(null)}>
+              취소
+            </Button>
+            <Button type="button" onClick={confirmDelete} className="bg-red-600 hover:bg-red-700 text-white border-red-600">
+              삭제
             </Button>
           </div>
         </div>
