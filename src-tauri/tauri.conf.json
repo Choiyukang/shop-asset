@@ -36,7 +36,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY4RjZDOTJGNUVDNDkwOUUKUldTZWtNUmVMOG4yYUxhVkZkaitLV0x4Q1VyMFBpTXhKR1YzR3hlaHVsN0lEcHhRU3RIOTA0OXgK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENFRUVGQ0IwRTY0QjA0MjgKUldRb0JFdm1zUHp1enZPTWk0QTRsSDFreXp3UXJEd3dKRXpBMzhLa2c5STI1WEdZVnNnMFQ5U1IK",
       "endpoints": [
         "https://github.com/Choiyukang/shop-asset/releases/latest/download/latest.json"
       ]
