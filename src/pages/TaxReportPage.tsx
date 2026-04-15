@@ -1,4 +1,8 @@
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
+import { Field } from "@/components/ui/field";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getTaxReport } from "@/lib/db";
 import { formatKRW } from "@/lib/utils";
 import type { TaxReportRow } from "@/types";
@@ -54,7 +58,7 @@ function toCSV(rows: TaxReportRow[]): string {
 }
 
 function downloadCSV(content: string, filename: string) {
-  const bom = "\uFEFF"; // UTF-8 BOM for Excel compatibility
+  const bom = "\uFEFF";
   const blob = new Blob([bom + content], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -93,12 +97,16 @@ export function TaxReportPage() {
 
   function handleExport() {
     const { start, end } = selectedPeriod.getRange(year);
-    const csv = toCSV(rows);
-    downloadCSV(csv, `부가세_${year}년_${selectedPeriod.label}_${start}_${end}.csv`);
+    downloadCSV(
+      toCSV(rows),
+      `부가세_${year}년_${selectedPeriod.label}_${start}_${end}.csv`,
+    );
   }
 
   const totalVat = rows.reduce((s, r) => s + r.vatAmount, 0);
-  const refundableVat = rows.filter((r) => r.isRefundable).reduce((s, r) => s + r.vatAmount, 0);
+  const refundableVat = rows
+    .filter((r) => r.isRefundable)
+    .reduce((s, r) => s + r.vatAmount, 0);
   const payableVat = rows
     .filter((r) => !r.isRefundable && r.transactionType === "sale")
     .reduce((s, r) => s + r.vatAmount, 0);
@@ -111,131 +119,155 @@ export function TaxReportPage() {
       </div>
 
       {/* 기간 선택 */}
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-neutral-200 bg-white p-5">
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-neutral-600">연도</label>
-          <select
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
-          >
-            {[currentYear - 1, currentYear].map((y) => (
-              <option key={y} value={y}>{y}년</option>
-            ))}
-          </select>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-neutral-600">신고 기간</label>
-          <select
-            value={periodKey}
-            onChange={(e) => setPeriodKey(e.target.value)}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
-          >
-            {PERIODS.map((p) => (
-              <option key={p.key} value={p.key}>{p.label}</option>
-            ))}
-          </select>
-        </div>
-        <button
-          onClick={handleLoad}
-          disabled={loading}
-          className="rounded-md bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
-        >
-          {loading ? "불러오는 중…" : "조회"}
-        </button>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>신고 기간 선택</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="w-32">
+              <Field label="연도">
+                <Select
+                  value={year}
+                  onChange={(e) => setYear(Number(e.target.value))}
+                >
+                  {[currentYear - 1, currentYear].map((y) => (
+                    <option key={y} value={y}>{y}년</option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            <div className="w-52">
+              <Field label="신고 기간">
+                <Select
+                  value={periodKey}
+                  onChange={(e) => setPeriodKey(e.target.value)}
+                >
+                  {PERIODS.map((p) => (
+                    <option key={p.key} value={p.key}>{p.label}</option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            <Button onClick={handleLoad} disabled={loading}>
+              {loading ? "불러오는 중…" : "조회"}
+            </Button>
+          </div>
 
-      {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+          {error && (
+            <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* 요약 + 내보내기 */}
+      {/* 요약 카드 */}
       {fetched && (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="rounded-lg border border-neutral-200 bg-white p-4">
-              <div className="text-xs text-neutral-500">총 부가세</div>
-              <div className="mt-1 text-xl font-semibold text-neutral-900">{formatKRW(totalVat)}</div>
-            </div>
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-              <div className="text-xs text-emerald-700">환급 세액 (매입)</div>
-              <div className="mt-1 text-xl font-semibold text-emerald-800">{formatKRW(refundableVat)}</div>
-            </div>
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-              <div className="text-xs text-red-700">납부 세액 (매출)</div>
-              <div className="mt-1 text-xl font-semibold text-red-800">
-                {formatKRW(Math.max(0, payableVat - refundableVat))}
+            <Card>
+              <CardContent>
+                <div className="text-xs text-neutral-500">총 부가세</div>
+                <div className="mt-1 text-xl font-semibold text-neutral-900">
+                  {formatKRW(totalVat)}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <div className="text-xs text-emerald-600">환급 세액 (매입)</div>
+                <div className="mt-1 text-xl font-semibold text-emerald-700">
+                  {formatKRW(refundableVat)}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <div className="text-xs text-red-600">납부 세액 (매출 − 매입)</div>
+                <div className="mt-1 text-xl font-semibold text-red-700">
+                  {formatKRW(Math.max(0, payableVat - refundableVat))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* 거래 테이블 */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>세금 내역 ({rows.length}건)</CardTitle>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleExport}
+                  disabled={rows.length === 0}
+                >
+                  CSV 내보내기
+                </Button>
               </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-neutral-500">총 {rows.length}건</p>
-            <button
-              onClick={handleExport}
-              disabled={rows.length === 0}
-              className="rounded-md border border-neutral-300 bg-white px-4 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-            >
-              CSV 내보내기
-            </button>
-          </div>
-
-          {rows.length === 0 ? (
-            <p className="py-8 text-center text-sm text-neutral-500">해당 기간에 거래가 없습니다.</p>
-          ) : (
-            <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
-              <table className="w-full text-sm">
-                <thead className="border-b border-neutral-200 bg-neutral-50 text-xs font-medium text-neutral-600">
-                  <tr>
-                    <th className="px-4 py-3 text-left">거래일</th>
-                    <th className="px-4 py-3 text-left">유형</th>
-                    <th className="px-4 py-3 text-left">거래처</th>
-                    <th className="px-4 py-3 text-right">공급가액</th>
-                    <th className="px-4 py-3 text-right">부가세</th>
-                    <th className="px-4 py-3 text-center">환급</th>
-                    <th className="px-4 py-3 text-left">메모</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {rows.map((r, i) => (
-                    <tr key={i} className="hover:bg-neutral-50">
-                      <td className="px-4 py-2.5 text-neutral-700">{r.date}</td>
-                      <td className="px-4 py-2.5">
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-                            r.transactionType === "sale"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : r.transactionType === "purchase"
-                              ? "bg-blue-100 text-blue-700"
-                              : "bg-neutral-100 text-neutral-600"
-                          }`}
-                        >
-                          {TYPE_KO[r.transactionType] ?? r.transactionType}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-neutral-700">{r.counterparty || "—"}</td>
-                      <td className="px-4 py-2.5 text-right font-medium text-neutral-900">
-                        {formatKRW(r.supplyAmount)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-medium text-neutral-900">
-                        {formatKRW(r.vatAmount)}
-                      </td>
-                      <td className="px-4 py-2.5 text-center">
-                        {r.isRefundable ? (
-                          <span className="text-xs text-emerald-600">환급</span>
-                        ) : (
-                          <span className="text-xs text-neutral-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-neutral-500">{r.memo || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+            </CardHeader>
+            <CardContent className="p-0">
+              {rows.length === 0 ? (
+                <p className="py-10 text-center text-sm text-neutral-500">
+                  해당 기간에 거래가 없습니다.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-neutral-200 bg-neutral-50 text-xs font-medium text-neutral-600">
+                      <tr>
+                        <th className="px-4 py-3 text-left">거래일</th>
+                        <th className="px-4 py-3 text-left">유형</th>
+                        <th className="px-4 py-3 text-left">거래처</th>
+                        <th className="px-4 py-3 text-right">공급가액</th>
+                        <th className="px-4 py-3 text-right">부가세</th>
+                        <th className="px-4 py-3 text-center">환급</th>
+                        <th className="px-4 py-3 text-left">메모</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {rows.map((r, i) => (
+                        <tr key={i} className="hover:bg-neutral-50">
+                          <td className="px-4 py-2.5 text-neutral-700">{r.date}</td>
+                          <td className="px-4 py-2.5">
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                                r.transactionType === "sale"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : r.transactionType === "purchase"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-neutral-100 text-neutral-600"
+                              }`}
+                            >
+                              {TYPE_KO[r.transactionType] ?? r.transactionType}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-neutral-700">
+                            {r.counterparty || "—"}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-medium text-neutral-900">
+                            {formatKRW(r.supplyAmount)}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-medium text-neutral-900">
+                            {formatKRW(r.vatAmount)}
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            {r.isRefundable ? (
+                              <span className="text-xs font-medium text-emerald-600">환급</span>
+                            ) : (
+                              <span className="text-xs text-neutral-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5 text-neutral-500">{r.memo || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
     </div>
