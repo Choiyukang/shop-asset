@@ -777,7 +777,7 @@ export async function getLowStockProducts(threshold = 5): Promise<Product[]> {
 export async function getPendingDeliveryProducts(): Promise<Product[]> {
   const db = await getDb();
   const rows = await db.select<RawProduct[]>(
-    "SELECT * FROM products WHERE is_pending_delivery = 1 ORDER BY expected_arrival_date ASC",
+    "SELECT * FROM products WHERE is_pending_delivery = 1 OR LOWER(CAST(is_pending_delivery AS TEXT)) = 'true' ORDER BY expected_arrival_date ASC",
   );
   return rows.map(mapProduct);
 }
