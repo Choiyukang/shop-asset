@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -115,6 +115,8 @@ export function CounterpartiesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     load();
@@ -223,9 +225,8 @@ export function CounterpartiesPage() {
               </tr>
             )}
             {counterparties.map((c) => (
-              <>
+              <Fragment key={c.id}>
                 <tr
-                  key={c.id}
                   className="border-b border-neutral-100 last:border-b-0 cursor-pointer hover:bg-neutral-50"
                   onClick={() => toggleExpand(c.id)}
                 >
@@ -251,13 +252,9 @@ export function CounterpartiesPage() {
                       <button
                         type="button"
                         className="rounded px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 hover:text-red-700"
-                        onClick={async () => {
-                          if (!window.confirm(`"${c.name}" 거래처를 삭제합니다.\n\n기존 거래내역에서 거래처명은 그대로 유지됩니다. 삭제하시겠습니까?`)) return;
-                          try {
-                            await remove(c.id);
-                          } catch (err) {
-                            alert(err instanceof Error ? err.message : "거래처 삭제에 실패했습니다.");
-                          }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmDeleteId(c.id);
                         }}
                       >
                         삭제
@@ -266,17 +263,63 @@ export function CounterpartiesPage() {
                   </td>
                 </tr>
                 {expandedId === c.id && (
-                  <tr key={`${c.id}-debt`}>
+                  <tr>
                     <td colSpan={6} className="p-0">
                       <DebtPanel counterparty={c} onSettled={load} />
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
       </div>
+
+      <Modal
+        open={confirmDeleteId !== null}
+        title="거래처 삭제"
+        onClose={() => setConfirmDeleteId(null)}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-neutral-700">
+            <span className="font-semibold">
+              {counterparties.find((c) => c.id === confirmDeleteId)?.name}
+            </span>{" "}
+            거래처를 삭제합니다.
+          </p>
+          <p className="text-xs text-neutral-500">
+            기존 거래내역에서 거래처명은 그대로 유지됩니다.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setConfirmDeleteId(null)}
+              disabled={deleting}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              disabled={deleting}
+              onClick={async () => {
+                if (!confirmDeleteId) return;
+                setDeleting(true);
+                try {
+                  await remove(confirmDeleteId);
+                  setConfirmDeleteId(null);
+                } catch (err) {
+                  alert(err instanceof Error ? err.message : "거래처 삭제에 실패했습니다.");
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              {deleting ? "삭제 중…" : "삭제"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={open}
