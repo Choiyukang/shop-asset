@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import React, { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
@@ -32,6 +32,15 @@ export function ProductsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [adjustTarget, setAdjustTarget] = useState<Product | null>(null);
   const [adjustValue, setAdjustValue] = useState<number>(0);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
+
+  function toggleGroup(name: string) {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  }
 
   useEffect(() => {
     load();
@@ -170,74 +179,206 @@ export function ProductsPage() {
                 </td>
               </tr>
             )}
-            {products.map((p) => (
-              <tr key={p.id} className="border-b border-neutral-100 last:border-b-0">
-                <td className="px-4 py-3 font-medium text-neutral-900">
-                  <div className="flex items-center gap-1.5">
-                    {p.name}
-                    {p.is_pending_delivery && (
-                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                        미송
-                      </span>
-                    )}
-                  </div>
-                  {p.is_pending_delivery && p.expected_arrival_date && (
-                    <div className="text-xs text-amber-600">입고 예정 {p.expected_arrival_date}</div>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-neutral-500 text-sm">
-                  {counterparties.find(c => c.id === p.counterparty_id)?.name ?? "—"}
-                </td>
-                <td className="px-4 py-3 text-neutral-500">{p.purchase_date ?? "—"}</td>
-                <td className="px-4 py-3 text-neutral-700">{p.color ?? "—"}</td>
-                <td className="px-4 py-3 text-neutral-700">{formatKRW(p.purchase_price)}</td>
-                <td className="px-4 py-3 text-neutral-700">{formatKRW(p.sale_price)}</td>
-                {(() => {
-                  if (!p.purchase_price || p.purchase_price === 0) {
-                    return <td className="px-4 py-3 text-neutral-400">—</td>;
-                  }
-                  const margin = Math.round(((p.sale_price - p.purchase_price) / p.purchase_price) * 100);
-                  const colorClass =
-                    margin < 0
-                      ? "text-red-600 font-semibold"
-                      : margin < 20
-                      ? "text-amber-600"
-                      : "text-emerald-700";
-                  return (
-                    <td className={`px-4 py-3 ${colorClass}`}>
-                      {margin > 0 ? "+" : ""}{margin}%
-                    </td>
+            {(() => {
+              const grouped = new Map<string, Product[]>();
+              for (const p of products) {
+                if (!grouped.has(p.name)) grouped.set(p.name, []);
+                grouped.get(p.name)!.push(p);
+              }
+
+              const rows: React.ReactNode[] = [];
+
+              for (const [name, group] of grouped) {
+                if (group.length === 1) {
+                  const p = group[0];
+                  rows.push(
+                    <tr key={p.id} className="border-b border-neutral-100 last:border-b-0">
+                      <td className="px-4 py-3 font-medium text-neutral-900">
+                        <div className="flex items-center gap-1.5">
+                          {p.name}
+                          {p.is_pending_delivery && (
+                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                              미송
+                            </span>
+                          )}
+                        </div>
+                        {p.is_pending_delivery && p.expected_arrival_date && (
+                          <div className="text-xs text-amber-600">입고 예정 {p.expected_arrival_date}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-500 text-sm">
+                        {counterparties.find(c => c.id === p.counterparty_id)?.name ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-500">{p.purchase_date ?? "—"}</td>
+                      <td className="px-4 py-3 text-neutral-700">{p.color ?? "—"}</td>
+                      <td className="px-4 py-3 text-neutral-700">{formatKRW(p.purchase_price)}</td>
+                      <td className="px-4 py-3 text-neutral-700">{formatKRW(p.sale_price)}</td>
+                      {(() => {
+                        if (!p.purchase_price || p.purchase_price === 0) {
+                          return <td className="px-4 py-3 text-neutral-400">—</td>;
+                        }
+                        const margin = Math.round(((p.sale_price - p.purchase_price) / p.purchase_price) * 100);
+                        const colorClass =
+                          margin < 0
+                            ? "text-red-600 font-semibold"
+                            : margin < 20
+                            ? "text-amber-600"
+                            : "text-emerald-700";
+                        return (
+                          <td className={`px-4 py-3 ${colorClass}`}>
+                            {margin > 0 ? "+" : ""}{margin}%
+                          </td>
+                        );
+                      })()}
+                      <td className="px-4 py-3 text-neutral-700">{p.stock}</td>
+                      <td className="px-4 py-3 text-neutral-500">{p.memo ?? ""}</td>
+                      <td className="px-4 py-3 text-neutral-500">
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100"
+                            onClick={() => openEdit(p)}
+                          >
+                            편집
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100"
+                            onClick={() => openAdjust(p)}
+                          >
+                            재고 조정
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-600 hover:bg-red-50"
+                            onClick={() => onDelete(p)}
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
                   );
-                })()}
-                <td className="px-4 py-3 text-neutral-700">{p.stock}</td>
-                <td className="px-4 py-3 text-neutral-500">{p.memo ?? ""}</td>
-                <td className="px-4 py-3 text-neutral-500">
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100"
-                      onClick={() => openEdit(p)}
+                } else {
+                  const isExpanded = expandedGroups.has(name);
+
+                  rows.push(
+                    <tr
+                      key={`group-${name}`}
+                      className="border-b border-neutral-200 bg-neutral-50 cursor-pointer hover:bg-neutral-100"
+                      onClick={() => toggleGroup(name)}
                     >
-                      편집
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100"
-                      onClick={() => openAdjust(p)}
-                    >
-                      재고 조정
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-600 hover:bg-red-50"
-                      onClick={() => onDelete(p)}
-                    >
-                      삭제
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                      <td className="px-4 py-3 font-semibold text-neutral-900" colSpan={1}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-neutral-400 text-xs">{isExpanded ? "▼" : "▶"}</span>
+                          {name}
+                          <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-neutral-600">
+                            {group.length}가지 색상
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-neutral-500 text-sm">
+                        {(() => {
+                          const cpIds = [...new Set(group.map(p => p.counterparty_id))];
+                          if (cpIds.length === 1 && cpIds[0]) {
+                            return counterparties.find(c => c.id === cpIds[0])?.name ?? "—";
+                          }
+                          return "—";
+                        })()}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-400 text-xs">—</td>
+                      <td className="px-4 py-3 text-neutral-500 text-xs">
+                        {group.map(p => p.color ?? "기본").join(" · ")}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-400">—</td>
+                      <td className="px-4 py-3 text-neutral-400">—</td>
+                      <td className="px-4 py-3 text-neutral-400">—</td>
+                      <td className="px-4 py-3 font-semibold text-neutral-900">
+                        {group.reduce((s, p) => s + p.stock, 0)}개
+                      </td>
+                      <td className="px-4 py-3 text-neutral-400">—</td>
+                      <td className="px-4 py-3 text-neutral-400"></td>
+                    </tr>
+                  );
+
+                  if (isExpanded) {
+                    for (const p of group) {
+                      rows.push(
+                        <tr key={p.id} className="border-b border-neutral-100 last:border-b-0 bg-white">
+                          <td className="px-4 py-3 font-medium text-neutral-700">
+                            <div className="flex items-center gap-1.5 pl-4">
+                              <span className="text-neutral-300">└</span>
+                              <span>{p.color ?? "기본"}</span>
+                              {p.is_pending_delivery && (
+                                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                                  미송
+                                </span>
+                              )}
+                            </div>
+                            {p.is_pending_delivery && p.expected_arrival_date && (
+                              <div className="text-xs text-amber-600 pl-7">입고 예정 {p.expected_arrival_date}</div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-neutral-500 text-sm">
+                            {counterparties.find(c => c.id === p.counterparty_id)?.name ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 text-neutral-500">{p.purchase_date ?? "—"}</td>
+                          <td className="px-4 py-3 text-neutral-700">{p.color ?? "—"}</td>
+                          <td className="px-4 py-3 text-neutral-700">{formatKRW(p.purchase_price)}</td>
+                          <td className="px-4 py-3 text-neutral-700">{formatKRW(p.sale_price)}</td>
+                          {(() => {
+                            if (!p.purchase_price || p.purchase_price === 0) {
+                              return <td className="px-4 py-3 text-neutral-400">—</td>;
+                            }
+                            const margin = Math.round(((p.sale_price - p.purchase_price) / p.purchase_price) * 100);
+                            const colorClass =
+                              margin < 0
+                                ? "text-red-600 font-semibold"
+                                : margin < 20
+                                ? "text-amber-600"
+                                : "text-emerald-700";
+                            return (
+                              <td className={`px-4 py-3 ${colorClass}`}>
+                                {margin > 0 ? "+" : ""}{margin}%
+                              </td>
+                            );
+                          })()}
+                          <td className="px-4 py-3 text-neutral-700">{p.stock}</td>
+                          <td className="px-4 py-3 text-neutral-500">{p.memo ?? ""}</td>
+                          <td className="px-4 py-3 text-neutral-500">
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100"
+                                onClick={(e) => { e.stopPropagation(); openEdit(p); }}
+                              >
+                                편집
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100"
+                                onClick={(e) => { e.stopPropagation(); openAdjust(p); }}
+                              >
+                                재고 조정
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-600 hover:bg-red-50"
+                                onClick={(e) => { e.stopPropagation(); onDelete(p); }}
+                              >
+                                삭제
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+                  }
+                }
+              }
+
+              return rows;
+            })()}
           </tbody>
         </table>
       </div>
