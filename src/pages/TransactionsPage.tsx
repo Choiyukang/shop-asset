@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -511,7 +512,8 @@ export function TransactionsPage() {
                       type="button"
                       className="rounded px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 hover:text-red-700"
                       onClick={async () => {
-                        if (!window.confirm("이 거래를 삭제하면 재고도 함께 복원됩니다. 삭제하시겠습니까?")) return;
+                        const ok = await confirm("이 거래를 삭제하면 재고도 함께 복원됩니다. 삭제하시겠습니까?", { title: "거래 삭제", kind: "warning" });
+                        if (!ok) return;
                         try {
                           await remove(t.id);
                         } catch (err) {
