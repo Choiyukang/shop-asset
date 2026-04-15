@@ -48,6 +48,7 @@ export function ProductsPage() {
   const [adjustValue, setAdjustValue] = useState<number>(0);
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState("");
 
   function toggleGroup(name: string) {
     setExpandedGroups(prev => {
@@ -172,6 +173,7 @@ export function ProductsPage() {
     }
   }
 
+
   function openAdjust(p: Product) {
     setAdjustTarget(p);
     setAdjustValue(p.stock);
@@ -194,7 +196,15 @@ export function ProductsPage() {
           <h1 className="text-2xl font-bold">상품</h1>
           <p className="text-sm text-neutral-500">사입가 · 판매가 · 재고를 관리합니다.</p>
         </div>
-        <Button onClick={openCreate}>신규 상품</Button>
+        <div className="flex items-center gap-2">
+          <Input
+            placeholder="상품명 검색…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-48"
+          />
+          <Button onClick={openCreate}>신규 상품</Button>
+        </div>
       </div>
 
       {error && (
@@ -236,8 +246,11 @@ export function ProductsPage() {
             )}
             {(() => {
               // 상품명 기준 그룹화 (등록 순서 유지)
+              const filtered = searchQuery.trim()
+                ? products.filter((p) => p.name.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+                : products;
               const grouped = new Map<string, Product[]>();
-              for (const p of products) {
+              for (const p of filtered) {
                 if (!grouped.has(p.name)) grouped.set(p.name, []);
                 grouped.get(p.name)!.push(p);
               }
@@ -678,7 +691,7 @@ export function ProductsPage() {
           <p className="text-sm text-neutral-600">
             <strong>{deleteTarget?.name}{deleteTarget?.color ? ` (${deleteTarget.color})` : ""}</strong> 상품을 삭제할까요?
           </p>
-          <p className="text-xs text-neutral-400">거래에 사용된 상품은 삭제할 수 없습니다.</p>
+          <p className="text-xs text-orange-600">거래 금액은 그대로 유지되지만, 거래내역의 상품 항목 연결이 끊어집니다.</p>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setDeleteTarget(null)}>
               취소

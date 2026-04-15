@@ -168,7 +168,8 @@ export async function updateProduct(
   const values: unknown[] = [];
   for (const [k, v] of Object.entries(patch)) {
     fields.push(`${k} = ?`);
-    values.push(v);
+    // SQLite stores booleans as integers; convert explicitly
+    values.push(k === "is_pending_delivery" ? (v ? 1 : 0) : v);
   }
   if (fields.length === 0) return;
   values.push(id);
@@ -180,7 +181,8 @@ export async function updateProduct(
 
 export async function deleteProduct(id: string): Promise<void> {
   const db = await getDb();
-  // ON DELETE RESTRICT will throw if referenced by transaction_items.
+  // 거래에 연결된 상품 항목을 먼저 제거 (거래 금액은 이미 저장돼 있으므로 금액 기록 유지)
+  await db.execute("DELETE FROM transaction_items WHERE product_id = ?", [id]);
   await db.execute("DELETE FROM products WHERE id = ?", [id]);
 }
 
@@ -439,6 +441,35 @@ export async function createTransaction(
   return mapTransaction(rows[0]!);
 }
 
+export async function deleteTransaction(id: string): Promise<void> {
+  const db = await getDb();
+  const txns = await db.select<{ type: string }[]>(
+    "SELECT type FROM transactions WHERE id = ?",
+    [id],
+  );
+  if (txns.length === 0) return;
+  const type = txns[0].type;
+
+  if (type === "purchase" || type === "sale") {
+    const items = await db.select<{ product_id: string; quantity: number }[]>(
+      "SELECT product_id, quantity FROM transaction_items WHERE transaction_id = ?",
+      [id],
+    );
+    for (const item of items) {
+      // 재고 역산: 구매는 입고였으므로 취소 시 차감, 판매는 출고였으므로 취소 시 증가
+      const reverseDelta = type === "purchase" ? -item.quantity : item.quantity;
+      await db.execute("UPDATE products SET stock = stock + ? WHERE id = ?", [
+        reverseDelta,
+        item.product_id,
+      ]);
+    }
+  }
+
+  await db.execute("DELETE FROM transaction_items WHERE transaction_id = ?", [id]);
+  await db.execute("DELETE FROM tax_records WHERE transaction_id = ?", [id]);
+  await db.execute("DELETE FROM transactions WHERE id = ?", [id]);
+}
+
 function typeKo(t: Transaction["type"]): string {
   switch (t) {
     case "purchase":
@@ -559,7 +590,7 @@ export async function syncAllTransactions(
           itemsSummary,
           String(Math.trunc(txn.commission_amount)),
           String(Math.trunc(txn.amount)),
-          txn.payment_status === "paid" ? "완료" : "외상",
+          txn.payment_status === "paid" ? "완료" : "대납",
           txn.memo ?? "",
         ]);
         success++;
@@ -629,7 +660,7 @@ export async function restoreFromSheet(
     const categoryName = row[3] ?? "";
     const commission = Number(row[5]) || 0;
     const amount = Number(row[6]) || 0;
-    const paymentStatus = row[7] === "외상" ? "pending" : "paid";
+    const paymentStatus = (row[7] === "외상" || row[7] === "대납") ? "pending" : "paid";
     const memo = row[8] ?? "";
 
     if (!date) { skipped++; onProgress?.(i + 1, total); continue; }
@@ -1154,7 +1185,7 @@ export async function exportStatementToSheet(
     r.type === "purchase" ? "구매" : r.type === "sale" ? "판매" : "지출",
     r.memo,
     String(Math.trunc(r.amount)),
-    r.payment_status === "paid" ? "완료" : "외상",
+    r.payment_status === "paid" ? "완료" : "대납",
   ]);
   await writeTabRows(user.google_sheet_id, tabName, HEADER, dataRows);
 }

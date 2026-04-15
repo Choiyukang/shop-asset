@@ -29,7 +29,7 @@ function toCSV(cp: Counterparty, year: number, month: number, rows: StatementRow
         `"${r.category}"`,
         r.amount,
         r.commission_amount,
-        r.payment_status === "paid" ? "완료" : "외상",
+        r.payment_status === "paid" ? "완료" : "대납",
         `"${r.memo}"`,
       ].join(","),
     ),
@@ -194,7 +194,7 @@ export function StatementPage() {
             </Card>
             <Card>
               <CardContent>
-                <div className="text-xs text-orange-600">외상 (미결제)</div>
+                <div className="text-xs text-orange-600">대납 (미결제)</div>
                 <div className="mt-1 text-lg font-semibold text-orange-700">{formatKRW(pendingAmount)}</div>
               </CardContent>
             </Card>
@@ -284,7 +284,7 @@ export function StatementPage() {
                             {r.payment_status === "paid" ? (
                               <span className="text-xs font-medium text-emerald-600">완료</span>
                             ) : (
-                              <span className="text-xs font-medium text-orange-600">외상</span>
+                              <span className="text-xs font-medium text-orange-600">대납</span>
                             )}
                           </td>
                           <td className="px-4 py-2.5 text-neutral-500">{r.memo || "—"}</td>

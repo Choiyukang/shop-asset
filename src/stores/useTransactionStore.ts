@@ -8,6 +8,7 @@ interface TransactionState {
   error: string | null;
   load: () => Promise<void>;
   add: (input: TransactionInput, taxType: TaxType) => Promise<void>;
+  remove: (id: string) => Promise<void>;
 }
 
 export const useTransactionStore = create<TransactionState>((set, get) => ({
@@ -29,6 +30,15 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       await get().load();
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "거래 저장에 실패했습니다." });
+      throw e;
+    }
+  },
+  async remove(id) {
+    try {
+      await db.deleteTransaction(id);
+      await get().load();
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "거래 삭제에 실패했습니다." });
       throw e;
     }
   },

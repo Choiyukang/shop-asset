@@ -56,7 +56,7 @@ function emptyForm(): FormState {
 }
 
 export function TransactionsPage() {
-  const { transactions, load, add, loading, error } = useTransactionStore();
+  const { transactions, load, add, remove, loading, error } = useTransactionStore();
   const { counterparties, load: loadCp } = useCounterpartyStore();
   const { categories, load: loadCat } = useCategoryStore();
   const { products, load: loadProducts } = useProductStore();
@@ -440,19 +440,20 @@ export function TransactionsPage() {
               <th className="px-4 py-3 font-medium">지불</th>
               <th className="px-4 py-3 font-medium">메모</th>
               <th className="px-4 py-3 font-medium">동기화</th>
+              <th className="px-4 py-3 font-medium"></th>
             </tr>
           </thead>
           <tbody>
             {loading && transactions.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-neutral-500">
+                <td colSpan={9} className="px-4 py-8 text-center text-neutral-500">
                   불러오는 중…
                 </td>
               </tr>
             )}
             {!loading && transactions.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-neutral-500">
+                <td colSpan={9} className="px-4 py-8 text-center text-neutral-500">
                   아직 등록된 거래가 없습니다. "신규 거래" 버튼으로 첫 거래를 추가하세요.
                 </td>
               </tr>
@@ -485,7 +486,7 @@ export function TransactionsPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-neutral-700">
-                    {t.payment_status === "paid" ? "완료" : "외상"}
+                    {t.payment_status === "paid" ? "완료" : "대납"}
                   </td>
                   <td className="px-4 py-3 text-neutral-500">{t.memo ?? ""}</td>
                   <td className="px-4 py-3 text-neutral-500">
@@ -504,6 +505,22 @@ export function TransactionsPage() {
                     ) : (
                       <span className="text-xs text-neutral-400">—</span>
                     )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      className="rounded px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 hover:text-red-700"
+                      onClick={async () => {
+                        if (!window.confirm("이 거래를 삭제하면 재고도 함께 복원됩니다. 삭제하시겠습니까?")) return;
+                        try {
+                          await remove(t.id);
+                        } catch (err) {
+                          alert(err instanceof Error ? err.message : "거래 삭제에 실패했습니다.");
+                        }
+                      }}
+                    >
+                      삭제
+                    </button>
                   </td>
                 </tr>
               );
@@ -769,7 +786,7 @@ export function TransactionsPage() {
               }
             >
               <option value="paid">완료 (바로 결제)</option>
-              <option value="pending">외상/미수금</option>
+              <option value="pending">대납</option>
             </Select>
           </Field>
           <Field label="메모">

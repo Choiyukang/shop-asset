@@ -194,7 +194,7 @@ export async function appendTransactionRow(
         row.items_summary,
         row.commission_amount,
         row.amount,
-        row.payment_status === "paid" ? "완료" : "외상",
+        row.payment_status === "paid" ? "완료" : "대납",
         row.memo,
       ],
     ],
