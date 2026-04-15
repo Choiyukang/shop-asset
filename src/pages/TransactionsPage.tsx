@@ -9,12 +9,13 @@ import { useTransactionStore } from "@/stores/useTransactionStore";
 import { useCounterpartyStore } from "@/stores/useCounterpartyStore";
 import { useCategoryStore } from "@/stores/useCategoryStore";
 import { useProductStore } from "@/stores/useProductStore";
-import { getCurrentUser, syncTransactionToSheet } from "@/lib/db";
+import { getCurrentUser, syncTransactionToSheet, listTransactionTemplates, saveTransactionTemplate, deleteTransactionTemplate } from "@/lib/db";
 import type {
   PaymentStatus,
   TaxType,
   TransactionInput,
   TransactionItemInput,
+  TransactionTemplate,
   TransactionType,
 } from "@/types";
 
@@ -58,6 +59,9 @@ export function TransactionsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [sheetConfigured, setSheetConfigured] = useState(false);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<TransactionTemplate[]>([]);
+  const [templateName, setTemplateName] = useState("");
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
 
   useEffect(() => {
     load();
@@ -70,6 +74,7 @@ export function TransactionsPage() {
         setSheetConfigured(!!u.google_sheet_id);
       }
     });
+    listTransactionTemplates().then(setTemplates);
   }, [load, loadCp, loadCat, loadProducts]);
 
   async function onRetrySync(id: string) {
@@ -139,6 +144,45 @@ export function TransactionsPage() {
     const auto = Math.round((itemsTotal * rate) / 100);
     setForm((f) => (f.commission_amount === auto ? f : { ...f, commission_amount: auto }));
   }, [isItemized, itemsTotal, form.counterparty_id, form.commission_overridden, counterpartyMap]);
+
+  function loadTemplate(t: TransactionTemplate) {
+    setForm((f) => ({
+      ...f,
+      type: t.type,
+      counterparty_id: t.counterparty_id,
+      category_id: t.category_id,
+      amount: t.amount,
+      commission_amount: t.commission_amount,
+      commission_overridden: t.commission_amount > 0,
+      memo: t.memo ?? "",
+      items: [],
+    }));
+  }
+
+  async function onSaveTemplate() {
+    if (!templateName.trim()) return;
+    try {
+      await saveTransactionTemplate(templateName.trim(), {
+        type: form.type,
+        counterparty_id: form.counterparty_id,
+        category_id: form.category_id,
+        amount: form.amount,
+        commission_amount: Math.trunc(form.commission_amount || 0),
+        memo: form.memo,
+      });
+      const updated = await listTransactionTemplates();
+      setTemplates(updated);
+      setTemplateName("");
+      setShowSaveTemplate(false);
+    } catch (err) {
+      console.warn("template save failed:", err);
+    }
+  }
+
+  async function onDeleteTemplate(id: string) {
+    await deleteTransactionTemplate(id);
+    setTemplates((prev) => prev.filter((t) => t.id !== id));
+  }
 
   function resetForm() {
     setForm(emptyForm());
@@ -390,6 +434,32 @@ export function TransactionsPage() {
         className="max-w-2xl"
       >
         <form onSubmit={onSubmit} className="space-y-4">
+          {/* 템플릿 불러오기 */}
+          {templates.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Select
+                value=""
+                onChange={(e) => {
+                  const t = templates.find((t) => t.id === e.target.value);
+                  if (t) loadTemplate(t);
+                }}
+                className="flex-1"
+              >
+                <option value="">템플릿에서 불러오기…</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </Select>
+              {templates.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="hidden"
+                  onClick={() => onDeleteTemplate(t.id)}
+                />
+              ))}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <Field label="날짜" required>
               <Input
@@ -608,6 +678,32 @@ export function TransactionsPage() {
               placeholder="예: 봄 신상 10개"
             />
           </Field>
+
+          {/* 템플릿 저장 */}
+          {!showSaveTemplate ? (
+            <button
+              type="button"
+              className="text-xs text-neutral-500 underline hover:text-neutral-700"
+              onClick={() => setShowSaveTemplate(true)}
+            >
+              + 이 설정을 템플릿으로 저장
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Input
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="템플릿 이름 (예: 삼촌 사입)"
+                className="flex-1"
+              />
+              <Button type="button" size="sm" onClick={onSaveTemplate} disabled={!templateName.trim()}>
+                저장
+              </Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => { setShowSaveTemplate(false); setTemplateName(""); }}>
+                취소
+              </Button>
+            </div>
+          )}
 
           {formError && (
             <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">

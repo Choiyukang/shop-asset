@@ -17,7 +17,7 @@ export function Sidebar() {
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-neutral-200 bg-white">
       <div className="px-5 py-5">
         <div className="text-lg font-bold tracking-tight">쇼핑몰 자산관리</div>
-        <div className="text-xs text-neutral-500">MallBook · Phase 1</div>
+        <div className="text-xs text-neutral-500">MallBook · v0.2.1</div>
       </div>
       <nav className="flex-1 space-y-1 px-2">
         {navItems.map((item) => {

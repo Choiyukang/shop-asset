@@ -15,6 +15,7 @@ export interface User {
   google_sheet_url: string | null;
   google_sheet_id: string | null;
   google_sheet_tab: string;
+  monthly_sales_goal: number;
   created_at: string;
 }
 
@@ -168,4 +169,16 @@ export interface TaxReportRow {
   vatAmount: number;
   isRefundable: boolean;
   memo: string;
+}
+
+export interface TransactionTemplate {
+  id: string;
+  name: string;
+  type: TransactionType;
+  counterparty_id: string | null;
+  category_id: string;
+  amount: number;
+  commission_amount: number;
+  memo: string | null;
+  created_at: string;
 }

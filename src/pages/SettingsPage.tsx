@@ -20,6 +20,7 @@ export function SettingsPage() {
   const [name, setName] = useState("");
   const [businessNumber, setBusinessNumber] = useState("");
   const [taxType, setTaxType] = useState<TaxType>("일반과세자");
+  const [salesGoal, setSalesGoal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -47,6 +48,7 @@ export function SettingsPage() {
           setSheetInput(u.google_sheet_id ?? "");
           setSheetTab(u.google_sheet_tab ?? "Transactions");
           setGoogleEmail(u.google_email ?? "");
+          setSalesGoal(u.monthly_sales_goal ?? 0);
         }
         try {
           setGoogleConnected(await isGoogleConnected());
@@ -80,6 +82,7 @@ export function SettingsPage() {
         name: name.trim() || "사장님",
         business_number: businessNumber.trim() || null,
         tax_type: taxType,
+        monthly_sales_goal: Math.max(0, Math.trunc(Number(salesGoal) || 0)),
       });
       const u = await getCurrentUser();
       if (u) setUser(u);
@@ -346,6 +349,16 @@ export function SettingsPage() {
                   <option value="일반과세자">일반과세자</option>
                   <option value="간이과세자">간이과세자</option>
                 </Select>
+              </Field>
+              <Field label="이번 달 목표 매출 (원)" hint="0 입력 시 대시보드 목표 바 숨김">
+                <Input
+                  type="number"
+                  min={0}
+                  step={10000}
+                  value={salesGoal === 0 ? "" : salesGoal}
+                  onChange={(e) => setSalesGoal(Number(e.target.value || 0))}
+                  placeholder="예: 5000000"
+                />
               </Field>
               <div className="text-xs text-neutral-500">
                 계정 ID: {user?.id ?? "—"} · 생성일: {user?.created_at?.slice(0, 10) ?? "—"}

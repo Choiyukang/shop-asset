@@ -171,6 +171,12 @@ pub fn run() {
             sql: include_str!("../migrations/20260415000004_add_telegram_bot.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "monthly goal and transaction templates",
+            sql: include_str!("../migrations/20260415000005_goal_and_templates.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

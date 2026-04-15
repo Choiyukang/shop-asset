@@ -3,6 +3,7 @@ import { StatCard } from "@/components/ui/card";
 import { formatKRW } from "@/lib/utils";
 import {
   getCurrentMonthSummary,
+  getCurrentUser,
   getMonthlyStats,
   getNextTaxDeadline,
   getOverdueReceivables,
@@ -30,6 +31,7 @@ export function DashboardPage() {
   const [lowStock, setLowStock] = useState<Product[]>([]);
   const [taxDeadline, setTaxDeadline] = useState<TaxDeadlineInfo | null>(null);
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([]);
+  const [salesGoal, setSalesGoal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,13 +43,14 @@ export function DashboardPage() {
     let canceled = false;
     (async () => {
       try {
-        const [s, u, r, ls, tax, ms] = await Promise.all([
+        const [s, u, r, ls, tax, ms, user] = await Promise.all([
           getCurrentMonthSummary(year, month),
           getTodayUnpaidBySupplier(),
           getOverdueReceivables(),
           getLowStockProducts(5),
           getNextTaxDeadline(),
           getMonthlyStats(6),
+          getCurrentUser(),
         ]);
         if (!canceled) {
           setSummary(s);
@@ -56,6 +59,7 @@ export function DashboardPage() {
           setLowStock(ls);
           setTaxDeadline(tax);
           setMonthlyStats(ms);
+          if (user?.monthly_sales_goal) setSalesGoal(user.monthly_sales_goal);
         }
       } catch (e) {
         if (!canceled)
@@ -96,6 +100,35 @@ export function DashboardPage() {
         />
         <StatCard label="거래 건수" value={loading ? "—" : `${summary.count}건`} />
       </div>
+
+      {salesGoal > 0 && (
+        <div className="rounded-lg border border-neutral-200 bg-white p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-neutral-900">이번 달 목표 매출</h2>
+              <p className="text-xs text-neutral-500">
+                {formatKRW(summary.sales)} / {formatKRW(salesGoal)}
+              </p>
+            </div>
+            <span className={`text-lg font-bold ${
+              summary.sales >= salesGoal ? "text-emerald-600" : "text-neutral-700"
+            }`}>
+              {Math.min(100, Math.round((summary.sales / salesGoal) * 100))}%
+            </span>
+          </div>
+          <div className="h-3 w-full overflow-hidden rounded-full bg-neutral-100">
+            <div
+              className={`h-full rounded-full transition-all ${
+                summary.sales >= salesGoal ? "bg-emerald-500" : "bg-blue-500"
+              }`}
+              style={{ width: `${Math.min(100, (summary.sales / salesGoal) * 100)}%` }}
+            />
+          </div>
+          {summary.sales >= salesGoal && (
+            <p className="mt-2 text-xs font-medium text-emerald-600">🎉 목표 달성!</p>
+          )}
+        </div>
+      )}
 
       <div className="rounded-lg border border-neutral-200 bg-white p-5">
         <div className="mb-3 flex items-end justify-between">

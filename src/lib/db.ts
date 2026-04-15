@@ -15,6 +15,7 @@ import type {
   Transaction,
   TransactionInput,
   TransactionItem,
+  TransactionTemplate,
   User,
 } from "@/types";
 import { splitVat } from "@/lib/tax";
@@ -956,4 +957,34 @@ export async function settleTransaction(transactionId: string): Promise<void> {
     "UPDATE transactions SET payment_status = 'paid' WHERE id = ?",
     [transactionId],
   );
+}
+
+// ---------- Transaction Templates ----------
+export async function listTransactionTemplates(): Promise<TransactionTemplate[]> {
+  const db = await getDb();
+  return db.select<TransactionTemplate[]>(
+    "SELECT * FROM transaction_templates ORDER BY name ASC",
+  );
+}
+
+export async function saveTransactionTemplate(
+  name: string,
+  input: Pick<TransactionInput, "type" | "counterparty_id" | "category_id" | "memo"> & {
+    amount: number;
+    commission_amount: number;
+  },
+): Promise<void> {
+  const db = await getDb();
+  const id = uuid("tpl");
+  await db.execute(
+    `INSERT OR REPLACE INTO transaction_templates
+      (id, name, type, counterparty_id, category_id, amount, commission_amount, memo)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, name, input.type, input.counterparty_id, input.category_id, input.amount, input.commission_amount, input.memo ?? null],
+  );
+}
+
+export async function deleteTransactionTemplate(id: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM transaction_templates WHERE id = ?", [id]);
 }

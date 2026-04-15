@@ -131,6 +131,7 @@ export function ProductsPage() {
               <th className="px-4 py-3 font-medium">깔(컬러)</th>
               <th className="px-4 py-3 font-medium">사입가</th>
               <th className="px-4 py-3 font-medium">판매가</th>
+              <th className="px-4 py-3 font-medium">마진율</th>
               <th className="px-4 py-3 font-medium">현재고</th>
               <th className="px-4 py-3 font-medium">메모</th>
               <th className="px-4 py-3 font-medium">액션</th>
@@ -139,14 +140,14 @@ export function ProductsPage() {
           <tbody>
             {loading && products.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-neutral-500">
+                <td colSpan={8} className="px-4 py-8 text-center text-neutral-500">
                   불러오는 중…
                 </td>
               </tr>
             )}
             {!loading && products.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-neutral-500">
+                <td colSpan={8} className="px-4 py-8 text-center text-neutral-500">
                   등록된 상품이 없습니다.
                 </td>
               </tr>
@@ -157,6 +158,23 @@ export function ProductsPage() {
                 <td className="px-4 py-3 text-neutral-700">{p.color ?? "—"}</td>
                 <td className="px-4 py-3 text-neutral-700">{formatKRW(p.purchase_price)}</td>
                 <td className="px-4 py-3 text-neutral-700">{formatKRW(p.sale_price)}</td>
+                {(() => {
+                  if (!p.purchase_price || p.purchase_price === 0) {
+                    return <td className="px-4 py-3 text-neutral-400">—</td>;
+                  }
+                  const margin = Math.round(((p.sale_price - p.purchase_price) / p.purchase_price) * 100);
+                  const colorClass =
+                    margin < 0
+                      ? "text-red-600 font-semibold"
+                      : margin < 20
+                      ? "text-amber-600"
+                      : "text-emerald-700";
+                  return (
+                    <td className={`px-4 py-3 ${colorClass}`}>
+                      {margin > 0 ? "+" : ""}{margin}%
+                    </td>
+                  );
+                })()}
                 <td className="px-4 py-3 text-neutral-700">{p.stock}</td>
                 <td className="px-4 py-3 text-neutral-500">{p.memo ?? ""}</td>
                 <td className="px-4 py-3 text-neutral-500">
@@ -189,6 +207,10 @@ export function ProductsPage() {
           </tbody>
         </table>
       </div>
+
+      <p className="text-xs text-neutral-400">
+        마진율 색상: <span className="text-emerald-700">20%↑ 양호</span> · <span className="text-amber-600">0~19% 주의</span> · <span className="text-red-600">음수 손실</span>
+      </p>
 
       <Modal
         open={open}
