@@ -5,8 +5,9 @@ import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { Field } from "@/components/ui/field";
 import { useCounterpartyStore } from "@/stores/useCounterpartyStore";
-import type { Counterparty, CounterpartyInput, CounterpartyType } from "@/types";
-import { updateCounterparty } from "@/lib/db";
+import type { Counterparty, CounterpartyInput, CounterpartyType, Transaction } from "@/types";
+import { updateCounterparty, getCounterpartyPendingTransactions, settleTransaction } from "@/lib/db";
+import { formatKRW } from "@/lib/utils";
 
 const typeLabel: Record<CounterpartyType, string> = {
   supplier: "공급업체",
@@ -25,6 +26,87 @@ const emptyForm: FormState = {
   commission_rate: 0,
 };
 
+function DebtPanel({ counterparty, onSettled }: { counterparty: Counterparty; onSettled: () => void }) {
+  const [txns, setTxns] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [settling, setSettling] = useState<string | null>(null);
+
+  useEffect(() => {
+    getCounterpartyPendingTransactions(counterparty.id)
+      .then(setTxns)
+      .finally(() => setLoading(false));
+  }, [counterparty.id]);
+
+  async function onSettle(txn: Transaction) {
+    setSettling(txn.id);
+    try {
+      await settleTransaction(txn.id);
+      setTxns((prev) => prev.filter((t) => t.id !== txn.id));
+      onSettled();
+    } finally {
+      setSettling(null);
+    }
+  }
+
+  const total = txns.reduce((s, t) => s + t.amount, 0);
+
+  if (loading) {
+    return <div className="px-8 py-4 text-xs text-neutral-500">불러오는 중…</div>;
+  }
+
+  if (txns.length === 0) {
+    return (
+      <div className="px-8 py-4 text-xs text-neutral-500">
+        미결제 외상이 없습니다.
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-neutral-50 px-6 py-4 border-t border-neutral-100">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-xs font-medium text-neutral-600">
+          미결제 외상 {txns.length}건
+        </span>
+        <span className="text-sm font-semibold text-orange-600">{formatKRW(total)}</span>
+      </div>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left text-neutral-500">
+            <th className="pb-2 font-medium">날짜</th>
+            <th className="pb-2 font-medium">유형</th>
+            <th className="pb-2 text-right font-medium">금액</th>
+            <th className="pb-2 font-medium">메모</th>
+            <th className="pb-2"></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-neutral-100">
+          {txns.map((t) => (
+            <tr key={t.id}>
+              <td className="py-1.5 text-neutral-700">{t.date}</td>
+              <td className="py-1.5 text-neutral-500">
+                {t.type === "sale" ? "매출" : t.type === "purchase" ? "매입" : "지출"}
+              </td>
+              <td className="py-1.5 text-right font-medium text-neutral-900">{formatKRW(t.amount)}</td>
+              <td className="py-1.5 text-neutral-500">{t.memo || "—"}</td>
+              <td className="py-1.5 text-right">
+                <button
+                  type="button"
+                  disabled={settling === t.id}
+                  onClick={() => onSettle(t)}
+                  className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  {settling === t.id ? "처리 중…" : "정산"}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function CounterpartiesPage() {
   const { counterparties, load, add, loading, error } = useCounterpartyStore();
   const [open, setOpen] = useState(false);
@@ -32,6 +114,7 @@ export function CounterpartiesPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     load();
@@ -54,6 +137,10 @@ export function CounterpartiesPage() {
     });
     setFormError(null);
     setOpen(true);
+  }
+
+  function toggleExpand(id: string) {
+    setExpandedId((prev) => (prev === id ? null : id));
   }
 
   async function onSubmit(e: FormEvent) {
@@ -136,22 +223,40 @@ export function CounterpartiesPage() {
               </tr>
             )}
             {counterparties.map((c) => (
-              <tr key={c.id} className="border-b border-neutral-100 last:border-b-0">
-                <td className="px-4 py-3 font-medium text-neutral-900">{c.name}</td>
-                <td className="px-4 py-3 text-neutral-700">{typeLabel[c.type]}</td>
-                <td className="px-4 py-3 text-neutral-700">{c.phone ?? "—"}</td>
-                <td className="px-4 py-3 text-neutral-700">{c.commission_rate ?? 0}%</td>
-                <td className="px-4 py-3 text-neutral-500">{c.created_at.slice(0, 10)}</td>
-                <td className="px-4 py-3 text-neutral-500">
-                  <button
-                    type="button"
-                    className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100"
-                    onClick={() => openEdit(c)}
-                  >
-                    편집
-                  </button>
-                </td>
-              </tr>
+              <>
+                <tr
+                  key={c.id}
+                  className="border-b border-neutral-100 last:border-b-0 cursor-pointer hover:bg-neutral-50"
+                  onClick={() => toggleExpand(c.id)}
+                >
+                  <td className="px-4 py-3 font-medium text-neutral-900">
+                    <span className="mr-1.5 text-neutral-400 text-xs">
+                      {expandedId === c.id ? "▾" : "▸"}
+                    </span>
+                    {c.name}
+                  </td>
+                  <td className="px-4 py-3 text-neutral-700">{typeLabel[c.type]}</td>
+                  <td className="px-4 py-3 text-neutral-700">{c.phone ?? "—"}</td>
+                  <td className="px-4 py-3 text-neutral-700">{c.commission_rate ?? 0}%</td>
+                  <td className="px-4 py-3 text-neutral-500">{c.created_at.slice(0, 10)}</td>
+                  <td className="px-4 py-3 text-neutral-500" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100"
+                      onClick={() => openEdit(c)}
+                    >
+                      편집
+                    </button>
+                  </td>
+                </tr>
+                {expandedId === c.id && (
+                  <tr key={`${c.id}-debt`}>
+                    <td colSpan={6} className="p-0">
+                      <DebtPanel counterparty={c} onSettled={load} />
+                    </td>
+                  </tr>
+                )}
+              </>
             ))}
           </tbody>
         </table>

@@ -90,6 +90,59 @@ fn bot_start_if_configured(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+// ── 알림 커맨드 ──────────────────────────────────────────────────────────
+#[tauri::command]
+fn check_and_notify(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+
+    let db_path = get_db_path(&app)?;
+    let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+
+    // 재고 부족 상품 확인 (5개 이하)
+    let low_stock: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT name FROM products WHERE stock <= 5 ORDER BY stock ASC LIMIT 10")
+            .map_err(|e| e.to_string())?;
+        let result: Vec<String> = stmt.query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        result
+    };
+
+    if !low_stock.is_empty() {
+        let body = format!("재고 부족: {}", low_stock.join(", "));
+        let _ = app.notification()
+            .builder()
+            .title("MallBook — 재고 경고")
+            .body(&body)
+            .show();
+    }
+
+    // 30일 이상 미수금 확인
+    let overdue_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(DISTINCT counterparty_id) FROM transactions \
+             WHERE type = 'sale' AND payment_status = 'pending' \
+             AND counterparty_id IS NOT NULL \
+             AND julianday('now') - julianday(date) >= 30",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+
+    if overdue_count > 0 {
+        let body = format!("{}개 거래처에 30일 이상 미수금이 있습니다.", overdue_count);
+        let _ = app.notification()
+            .builder()
+            .title("MallBook — 미수금 알림")
+            .body(&body)
+            .show();
+    }
+
+    Ok(())
+}
+
 // ── 앱 진입점 ────────────────────────────────────────────────────────────
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -122,6 +175,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(BotHandle::new())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
@@ -136,6 +190,7 @@ pub fn run() {
             bot_set_token,
             bot_get_token,
             bot_start_if_configured,
+            check_and_notify,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

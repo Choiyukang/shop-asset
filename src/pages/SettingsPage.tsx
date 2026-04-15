@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/ui/field";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getCurrentUser, updateUser, resetSheetSync, syncAllTransactions, restoreFromSheet } from "@/lib/db";
+import { getCurrentUser, updateUser, resetSheetSync, syncAllTransactions, restoreFromSheet, exportAllData, importAllData } from "@/lib/db";
 import type { TaxType, User } from "@/types";
 import {
   connectGoogle,
@@ -134,6 +134,11 @@ export function SettingsPage() {
 
   const [syncProgress, setSyncProgress] = useState<string | null>(null);
 
+  // 백업/복원
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  const [backupError, setBackupError] = useState<string | null>(null);
+
   // 텔레그램 봇
   const [botToken, setBotToken] = useState("");
   const [botSaving, setBotSaving] = useState(false);
@@ -254,6 +259,50 @@ export function SettingsPage() {
       setBotError(err instanceof Error ? err.message : "봇 연결 해제에 실패했습니다.");
     } finally {
       setBotSaving(false);
+    }
+  }
+
+  async function onExportJson() {
+    setBackupBusy(true);
+    setBackupStatus(null);
+    setBackupError(null);
+    try {
+      const json = await exportAllData();
+      const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const date = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `mallbook_backup_${date}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setBackupStatus("백업 파일이 다운로드되었습니다.");
+    } catch (e) {
+      setBackupError(e instanceof Error ? e.message : "백업 실패");
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function onImportJson(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setBackupBusy(true);
+    setBackupStatus(null);
+    setBackupError(null);
+    try {
+      const text = await file.text();
+      const result = await importAllData(text);
+      setBackupStatus(
+        `복원 완료: ${result.imported}건 가져옴` +
+          (result.skipped > 0 ? `, ${result.skipped}건 건너뜀 (중복)` : "") +
+          (result.errors.length > 0 ? ` — 오류 ${result.errors.length}건` : ""),
+      );
+    } catch (e) {
+      setBackupError(e instanceof Error ? e.message : "복원 실패 — JSON 형식을 확인하세요.");
+    } finally {
+      setBackupBusy(false);
     }
   }
 
@@ -522,6 +571,50 @@ export function SettingsPage() {
                 </div>
               </form>
             )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>데이터 백업 / 복원</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="max-w-2xl space-y-4">
+            <p className="text-sm text-neutral-600">
+              모든 거래처·상품·거래 내역을 JSON 파일로 내보내거나, 이전에 만든 백업 파일을 복원합니다.
+            </p>
+            <div className="rounded-md border border-neutral-100 bg-neutral-50 px-3 py-2 text-xs text-neutral-500 space-y-1">
+              <p><span className="font-medium text-neutral-700">백업 내보내기</span> — 현재 DB 전체를 JSON 파일로 저장합니다. 기기 이전이나 앱 재설치 전에 사용하세요.</p>
+              <p><span className="font-medium text-neutral-700">백업에서 복원</span> — 이전에 저장한 JSON 파일을 선택하면 새 항목만 추가됩니다. 기존 데이터는 삭제되지 않습니다.</p>
+            </div>
+            {backupError && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                {backupError}
+              </div>
+            )}
+            {backupStatus && (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-700">
+                {backupStatus}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <Button onClick={onExportJson} disabled={backupBusy} variant="secondary">
+                {backupBusy ? "처리 중…" : "백업 내보내기"}
+              </Button>
+              <label className={`inline-flex cursor-pointer ${backupBusy ? "opacity-50 pointer-events-none" : ""}`}>
+                <input
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={onImportJson}
+                  disabled={backupBusy}
+                />
+                <span className="inline-flex items-center justify-center rounded-md bg-neutral-100 px-4 py-0 h-10 text-sm font-medium text-neutral-900 hover:bg-neutral-200 transition-colors cursor-pointer">
+                  백업에서 복원
+                </span>
+              </label>
+            </div>
           </div>
         </CardContent>
       </Card>

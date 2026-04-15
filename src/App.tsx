@@ -7,6 +7,7 @@ import { TransactionsPage } from "@/pages/TransactionsPage";
 import { CounterpartiesPage } from "@/pages/CounterpartiesPage";
 import { ProductsPage } from "@/pages/ProductsPage";
 import { TaxReportPage } from "@/pages/TaxReportPage";
+import { PnlPage } from "@/pages/PnlPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 
 const router = createBrowserRouter([
@@ -19,6 +20,7 @@ const router = createBrowserRouter([
       { path: "products", element: <ProductsPage /> },
       { path: "counterparties", element: <CounterpartiesPage /> },
       { path: "tax", element: <TaxReportPage /> },
+      { path: "pnl", element: <PnlPage /> },
       { path: "settings", element: <SettingsPage /> },
     ],
   },
@@ -29,6 +31,7 @@ function App() {
     // DB 초기화 완료 후 저장된 봇 토큰이 있으면 봇 자동 시작
     const timer = setTimeout(() => {
       invoke("bot_start_if_configured").catch(() => {});
+      invoke("check_and_notify").catch(() => {});
     }, 1500);
     return () => clearTimeout(timer);
   }, []);

@@ -846,3 +846,114 @@ export async function getTaxReport(
     memo: r.memo,
   }));
 }
+
+// ---------- JSON Backup / Restore ----------
+export async function exportAllData(): Promise<string> {
+  const db = await getDb();
+  const [users, counterparties, categories, products, transactions, transactionItems, taxRecords] =
+    await Promise.all([
+      db.select<unknown[]>("SELECT * FROM users"),
+      db.select<unknown[]>("SELECT * FROM counterparties"),
+      db.select<unknown[]>("SELECT * FROM categories"),
+      db.select<unknown[]>("SELECT * FROM products"),
+      db.select<unknown[]>("SELECT * FROM transactions ORDER BY date ASC"),
+      db.select<unknown[]>("SELECT * FROM transaction_items"),
+      db.select<unknown[]>("SELECT * FROM tax_records"),
+    ]);
+  return JSON.stringify(
+    {
+      version: 1,
+      exported_at: new Date().toISOString(),
+      users,
+      counterparties,
+      categories,
+      products,
+      transactions,
+      transaction_items: transactionItems,
+      tax_records: taxRecords,
+    },
+    null,
+    2,
+  );
+}
+
+export async function importAllData(
+  json: string,
+): Promise<{ imported: number; skipped: number; errors: string[] }> {
+  const db = await getDb();
+  const data = JSON.parse(json) as {
+    version?: number;
+    counterparties?: unknown[];
+    products?: unknown[];
+    transactions?: unknown[];
+    transaction_items?: unknown[];
+    tax_records?: unknown[];
+  };
+
+  let imported = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  async function upsertRows(
+    table: string,
+    rows: unknown[],
+    idField = "id",
+  ) {
+    for (const row of rows) {
+      const r = row as Record<string, unknown>;
+      const keys = Object.keys(r);
+      const placeholders = keys.map(() => "?").join(", ");
+      const cols = keys.join(", ");
+      const vals = keys.map((k) => r[k]);
+      try {
+        const existing = await db.select<{ id: string }[]>(
+          `SELECT id FROM ${table} WHERE ${idField} = ?`,
+          [r[idField]],
+        );
+        if (existing.length > 0) {
+          skipped++;
+          continue;
+        }
+        await db.execute(
+          `INSERT OR IGNORE INTO ${table} (${cols}) VALUES (${placeholders})`,
+          vals,
+        );
+        imported++;
+      } catch (e) {
+        errors.push(`${table}: ${e instanceof Error ? e.message : String(e)}`);
+        skipped++;
+      }
+    }
+  }
+
+  if (data.counterparties?.length) await upsertRows("counterparties", data.counterparties);
+  if (data.products?.length) await upsertRows("products", data.products);
+  if (data.transactions?.length) await upsertRows("transactions", data.transactions);
+  if (data.transaction_items?.length) await upsertRows("transaction_items", data.transaction_items);
+  if (data.tax_records?.length) await upsertRows("tax_records", data.tax_records);
+
+  return { imported, skipped, errors };
+}
+
+// ---------- Counterparty Debt Ledger ----------
+export async function getCounterpartyPendingTransactions(
+  counterpartyId: string,
+): Promise<Transaction[]> {
+  const db = await getDb();
+  const rows = await db.select<RawTransaction[]>(
+    `SELECT * FROM transactions
+      WHERE counterparty_id = ?
+        AND payment_status = 'pending'
+      ORDER BY date ASC`,
+    [counterpartyId],
+  );
+  return rows.map(mapTransaction);
+}
+
+export async function settleTransaction(transactionId: string): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "UPDATE transactions SET payment_status = 'paid' WHERE id = ?",
+    [transactionId],
+  );
+}
