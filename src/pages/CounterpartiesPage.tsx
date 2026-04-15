@@ -251,7 +251,7 @@ export function CounterpartiesPage() {
                       </button>
                       <button
                         type="button"
-                        className="rounded px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 hover:text-red-700"
+                        className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-600 hover:bg-red-50"
                         onClick={(e) => {
                           e.stopPropagation();
                           setConfirmDeleteId(c.id);

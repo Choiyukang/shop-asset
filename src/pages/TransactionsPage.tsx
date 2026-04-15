@@ -510,7 +510,7 @@ export function TransactionsPage() {
                   <td className="px-4 py-3">
                     <button
                       type="button"
-                      className="rounded px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 hover:text-red-700"
+                      className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-600 hover:bg-red-50"
                       onClick={async () => {
                         const ok = await confirm("이 거래를 삭제하면 재고도 함께 복원됩니다. 삭제하시겠습니까?", { title: "거래 삭제", kind: "warning" });
                         if (!ok) return;

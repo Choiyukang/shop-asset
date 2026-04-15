@@ -896,6 +896,27 @@ export async function getMonthlyStats(months = 6): Promise<MonthlyStats[]> {
   return Array.from(monthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
 }
 
+export async function getMonthlyStatsByRange(
+  startDate: string,
+  endDate: string,
+): Promise<MonthlyStats[]> {
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("date, type, amount")
+    .gte("date", startDate)
+    .lte("date", endDate);
+  throwIf(error);
+  const monthMap = new Map<string, MonthlyStats>();
+  for (const r of (data ?? []) as { date: string; type: string; amount: number }[]) {
+    const month = r.date.slice(0, 7);
+    const entry = monthMap.get(month) ?? { month, sales: 0, expense: 0 };
+    if (r.type === "sale") entry.sales += Number(r.amount);
+    else if (r.type === "purchase" || r.type === "expense") entry.expense += Number(r.amount);
+    monthMap.set(month, entry);
+  }
+  return Array.from(monthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
+}
+
 // ---------- Tax Report ----------
 export async function getTaxReport(
   startDate: string,
