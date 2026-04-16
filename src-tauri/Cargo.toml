@@ -1,6 +1,6 @@
 [package]
 name = "shop-asset"
-version = "0.2.14"
+version = "0.2.16"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
