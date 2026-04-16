@@ -185,7 +185,7 @@ export function ProductsPage() {
   async function onAdjust() {
     if (!adjustTarget) return;
     try {
-      await update(adjustTarget.id, { stock: Math.trunc(Number(adjustValue) || 0) });
+      await update(adjustTarget.id, { stock: Math.max(0, Math.trunc(Number(adjustValue) || 0)) });
       setAdjustTarget(null);
     } catch (err) {
       toast(err instanceof Error ? err.message : "재고 조정에 실패했습니다.");

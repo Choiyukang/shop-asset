@@ -138,8 +138,8 @@ export function SettingsPage() {
   const [syncAction, setSyncAction] = useState<"stock" | "summary" | "restore" | "all" | null>(null);
 
   const onSyncStock = async () => {
-    setGoogleBusy(true);
     setSyncAction("stock");
+    setGoogleBusy(true);
     setSyncProgress("재고 동기화 중…");
     try {
       await syncStockToSheet();
@@ -153,8 +153,8 @@ export function SettingsPage() {
   };
 
   const onSyncSummary = async () => {
-    setGoogleBusy(true);
     setSyncAction("summary");
+    setGoogleBusy(true);
     setSyncProgress("요약 동기화 중…");
     try {
       await syncSummaryToSheet();
@@ -250,8 +250,8 @@ export function SettingsPage() {
   async function onSyncAll() {
     setGoogleError(null);
     setGoogleStatus(null);
-    setGoogleBusy(true);
     setSyncAction("all");
+    setGoogleBusy(true);
     setSyncProgress("준비 중…");
     try {
       await resetSheetSync();
@@ -276,8 +276,8 @@ export function SettingsPage() {
   async function onRestoreFromSheet() {
     setGoogleError(null);
     setGoogleStatus(null);
-    setGoogleBusy(true);
     setSyncAction("restore");
+    setGoogleBusy(true);
     setSyncProgress("시트에서 읽는 중…");
     try {
       const result = await restoreFromSheet((done, total) => {

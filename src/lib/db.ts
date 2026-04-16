@@ -833,7 +833,7 @@ export async function getNextTaxDeadline(): Promise<TaxDeadlineInfo> {
   }
 
   return {
-    deadlineDate: chosen.date.toISOString().slice(0, 10),
+    deadlineDate: `${chosen.date.getFullYear()}-${String(chosen.date.getMonth() + 1).padStart(2, "0")}-${String(chosen.date.getDate()).padStart(2, "0")}`,
     daysLeft,
     periodLabel: chosen.label,
     estimatedVat: totalVat,
