@@ -135,9 +135,11 @@ export function SettingsPage() {
   }
 
   const [syncProgress, setSyncProgress] = useState<string | null>(null);
+  const [syncAction, setSyncAction] = useState<"stock" | "summary" | "restore" | "all" | null>(null);
 
   const onSyncStock = async () => {
     setGoogleBusy(true);
+    setSyncAction("stock");
     setSyncProgress("재고 동기화 중…");
     try {
       await syncStockToSheet();
@@ -146,11 +148,13 @@ export function SettingsPage() {
       setSyncProgress(e instanceof Error ? e.message : "오류 발생");
     } finally {
       setGoogleBusy(false);
+      setSyncAction(null);
     }
   };
 
   const onSyncSummary = async () => {
     setGoogleBusy(true);
+    setSyncAction("summary");
     setSyncProgress("요약 동기화 중…");
     try {
       await syncSummaryToSheet();
@@ -159,6 +163,7 @@ export function SettingsPage() {
       setSyncProgress(e instanceof Error ? e.message : "오류 발생");
     } finally {
       setGoogleBusy(false);
+      setSyncAction(null);
     }
   };
 
@@ -246,6 +251,7 @@ export function SettingsPage() {
     setGoogleError(null);
     setGoogleStatus(null);
     setGoogleBusy(true);
+    setSyncAction("all");
     setSyncProgress("준비 중…");
     try {
       await resetSheetSync();
@@ -263,6 +269,7 @@ export function SettingsPage() {
       setGoogleError(`동기화 실패: ${msg}`);
     } finally {
       setGoogleBusy(false);
+      setSyncAction(null);
     }
   }
 
@@ -270,6 +277,7 @@ export function SettingsPage() {
     setGoogleError(null);
     setGoogleStatus(null);
     setGoogleBusy(true);
+    setSyncAction("restore");
     setSyncProgress("시트에서 읽는 중…");
     try {
       const result = await restoreFromSheet((done, total) => {
@@ -286,6 +294,7 @@ export function SettingsPage() {
       setGoogleError(`복원 실패: ${msg}`);
     } finally {
       setGoogleBusy(false);
+      setSyncAction(null);
     }
   }
 
@@ -524,7 +533,7 @@ export function SettingsPage() {
                     disabled={googleBusy || !googleConnected || !user?.google_sheet_id}
                     onClick={onSyncStock}
                   >
-                    {syncProgress === "재고 동기화 중…" || syncProgress === "재고 탭 동기화 완료" ? syncProgress : "재고 탭 동기화"}
+                    {syncAction === "stock" ? (syncProgress ?? "처리 중…") : "재고 탭 동기화"}
                   </Button>
                   <Button
                     type="button"
@@ -532,7 +541,7 @@ export function SettingsPage() {
                     disabled={googleBusy || !googleConnected || !user?.google_sheet_id}
                     onClick={onSyncSummary}
                   >
-                    {syncProgress === "요약 동기화 중…" || syncProgress === "거래처 요약 탭 동기화 완료" ? syncProgress : "거래처 요약 동기화"}
+                    {syncAction === "summary" ? (syncProgress ?? "처리 중…") : "거래처 요약 동기화"}
                   </Button>
                 </div>
                 <div className="flex justify-end gap-2">
@@ -542,7 +551,7 @@ export function SettingsPage() {
                     disabled={googleBusy || !googleConnected || !user?.google_sheet_id}
                     onClick={onRestoreFromSheet}
                   >
-                    {syncProgress && syncProgress.includes("복원") ? syncProgress : "시트에서 복원"}
+                    {syncAction === "restore" ? (syncProgress ?? "처리 중…") : "시트에서 복원"}
                   </Button>
                   <Button
                     type="button"
@@ -550,10 +559,10 @@ export function SettingsPage() {
                     disabled={googleBusy || !googleConnected || !user?.google_sheet_id}
                     onClick={onSyncAll}
                   >
-                    {syncProgress && !syncProgress.includes("복원") && syncProgress !== "재고 동기화 중…" && syncProgress !== "재고 탭 동기화 완료" && syncProgress !== "요약 동기화 중…" && syncProgress !== "거래처 요약 탭 동기화 완료" ? syncProgress : "전체 동기화"}
+                    {syncAction === "all" ? (syncProgress ?? "처리 중…") : "전체 동기화"}
                   </Button>
                   <Button type="submit" disabled={googleBusy || !googleConnected}>
-                    {googleBusy ? "저장 중…" : "시트 설정 저장"}
+                    {googleBusy && !syncAction ? "저장 중…" : "시트 설정 저장"}
                   </Button>
                 </div>
               </form>
