@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { useToast } from "@/components/ui/toast";
+import { Combobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -38,6 +39,8 @@ interface FormState extends Omit<TransactionInput, "items" | "commission_amount"
   commission_overridden: boolean;
   counterparty_name: string;
   counterparty_phone: string;
+  is_pending_delivery: boolean;
+  expected_arrival_date: string | null;
 }
 
 function emptyForm(): FormState {
@@ -54,10 +57,13 @@ function emptyForm(): FormState {
     items: [],
     commission_amount: 0,
     commission_overridden: false,
+    is_pending_delivery: false,
+    expected_arrival_date: null,
   };
 }
 
 export function TransactionsPage() {
+  const toast = useToast();
   const { transactions, load, add, remove, loading, error } = useTransactionStore();
   const { counterparties, load: loadCp } = useCounterpartyStore();
   const { categories, load: loadCat } = useCategoryStore();
@@ -73,6 +79,9 @@ export function TransactionsPage() {
   const [templates, setTemplates] = useState<TransactionTemplate[]>([]);
   const [templateName, setTemplateName] = useState("");
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [overstockConfirm, setOverstockConfirm] = useState<{ name: string; stock: number; quantity: number } | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     load();
@@ -95,7 +104,7 @@ export function TransactionsPage() {
       await load();
     } catch (err) {
       console.warn("[google] retry sync failed:", err);
-      alert(err instanceof Error ? err.message : "재시도에 실패했습니다.");
+      toast(err instanceof Error ? err.message : "재시도에 실패했습니다.");
     } finally {
       setSyncingId(null);
     }
@@ -311,13 +320,8 @@ export function TransactionsPage() {
         });
         if (overstock) {
           const p = productMap.get(overstock.product_id);
-          if (
-            !confirm(
-              `'${p?.name}'의 현재 재고(${p?.stock})보다 수량(${overstock.quantity})이 많습니다. 그래도 진행할까요?`,
-            )
-          ) {
-            return;
-          }
+          setOverstockConfirm({ name: p?.name ?? "", stock: p?.stock ?? 0, quantity: overstock.quantity });
+          return;
         }
       }
     } else {
@@ -326,6 +330,11 @@ export function TransactionsPage() {
         return;
       }
     }
+    await executeSubmit();
+  }
+
+  async function executeSubmit() {
+    setOverstockConfirm(null);
     setSubmitting(true);
     try {
       // 거래처 이름으로 자동 생성 또는 기존 매칭
@@ -363,9 +372,9 @@ export function TransactionsPage() {
             stock: 0,
             memo: null,
             counterparty_id: resolvedCpId,
-            purchase_date: null,
-            is_pending_delivery: false,
-            expected_arrival_date: null,
+            purchase_date: form.date,
+            is_pending_delivery: form.is_pending_delivery,
+            expected_arrival_date: form.is_pending_delivery ? form.expected_arrival_date : null,
           });
           await loadProducts();
           resolvedItems.push({ product_id: newPrd.id, quantity: it.quantity, unit_price: it.unit_price });
@@ -431,6 +440,7 @@ export function TransactionsPage() {
       )}
 
       <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b border-neutral-200 bg-neutral-50 text-left text-xs uppercase text-neutral-500">
             <tr>
@@ -512,15 +522,7 @@ export function TransactionsPage() {
                     <button
                       type="button"
                       className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-600 hover:bg-red-50"
-                      onClick={async () => {
-                        const ok = await confirm("이 거래를 삭제하면 재고도 함께 복원됩니다. 삭제하시겠습니까?", { title: "거래 삭제", kind: "warning" });
-                        if (!ok) return;
-                        try {
-                          await remove(t.id);
-                        } catch (err) {
-                          alert(err instanceof Error ? err.message : "거래 삭제에 실패했습니다.");
-                        }
-                      }}
+                      onClick={() => setConfirmDeleteId(t.id)}
                     >
                       삭제
                     </button>
@@ -530,7 +532,75 @@ export function TransactionsPage() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
+
+      {/* 재고 초과 확인 모달 */}
+      <Modal
+        open={overstockConfirm !== null}
+        title="재고 초과 경고"
+        onClose={() => setOverstockConfirm(null)}
+        className="max-w-sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-neutral-700">
+            <span className="font-semibold">'{overstockConfirm?.name}'</span>의 현재 재고(
+            <span className="font-semibold">{overstockConfirm?.stock}</span>)보다 수량(
+            <span className="font-semibold">{overstockConfirm?.quantity}</span>)이 많습니다. 그래도 진행할까요?
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setOverstockConfirm(null)}>
+              취소
+            </Button>
+            <Button type="button" onClick={() => executeSubmit()}>
+              계속 진행
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* 거래 삭제 확인 모달 */}
+      <Modal
+        open={confirmDeleteId !== null}
+        title="거래 삭제"
+        onClose={() => setConfirmDeleteId(null)}
+        className="max-w-sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-neutral-700">
+            이 거래를 삭제하면 재고도 함께 복원됩니다. 삭제하시겠습니까?
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setConfirmDeleteId(null)}
+              disabled={deletingId !== null}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              className="bg-red-600 hover:bg-red-700 text-white border-red-600"
+              disabled={deletingId !== null}
+              onClick={async () => {
+                if (!confirmDeleteId) return;
+                setDeletingId(confirmDeleteId);
+                try {
+                  await remove(confirmDeleteId);
+                  setConfirmDeleteId(null);
+                } catch (err) {
+                  toast(err instanceof Error ? err.message : "거래 삭제에 실패했습니다.");
+                } finally {
+                  setDeletingId(null);
+                }
+              }}
+            >
+              {deletingId !== null ? "삭제 중…" : "삭제"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={open}
@@ -591,21 +661,48 @@ export function TransactionsPage() {
               </Select>
             </Field>
           </div>
+          {form.type === "purchase" && (
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.is_pending_delivery}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      is_pending_delivery: e.target.checked,
+                      expected_arrival_date: e.target.checked ? form.expected_arrival_date : null,
+                    })
+                  }
+                  className="h-4 w-4 rounded border-neutral-300"
+                />
+                <span className="text-sm font-medium text-neutral-700">미송 (주문했지만 아직 미입고)</span>
+              </label>
+              {form.is_pending_delivery && (
+                <Field label="입고 예정일">
+                  <DatePicker
+                    value={form.expected_arrival_date ?? ""}
+                    onChange={(v) => setForm({ ...form, expected_arrival_date: v || null })}
+                  />
+                </Field>
+              )}
+            </div>
+          )}
           <Field label="거래처" hint="기존 거래처는 자동완성, 새 이름 입력 시 자동 등록">
-            <input
-              list="cp-list"
+            <Combobox
               value={form.counterparty_name}
-              onChange={(e) =>
-                setForm({ ...form, counterparty_name: e.target.value, counterparty_id: null, commission_overridden: false })
+              options={counterparties.map((cp) => ({ id: cp.id, label: cp.name }))}
+              onChange={(name, selected) =>
+                setForm({
+                  ...form,
+                  counterparty_name: name,
+                  counterparty_id: selected ? selected.id : null,
+                  commission_overridden: false,
+                })
               }
               placeholder="거래처명 입력 (선택)"
-              className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-400"
+              maxLength={100}
             />
-            <datalist id="cp-list">
-              {counterparties.map((cp) => (
-                <option key={cp.id} value={cp.name} />
-              ))}
-            </datalist>
           </Field>
           {form.counterparty_name.trim() &&
             !counterparties.some(
@@ -616,6 +713,7 @@ export function TransactionsPage() {
                 value={form.counterparty_phone}
                 onChange={(e) => setForm({ ...form, counterparty_phone: e.target.value })}
                 placeholder="010-0000-0000"
+                maxLength={20}
               />
             </Field>
           )}
@@ -668,22 +766,34 @@ export function TransactionsPage() {
                         return (
                           <tr key={idx} className="border-t border-neutral-100">
                             <td className="px-2 py-1.5 space-y-1">
-                              <input
-                                list={`prd-list-${idx}`}
+                              <Combobox
                                 value={it.product_name}
-                                onChange={(e) => updateItem(idx, { product_name: e.target.value })}
+                                options={productOptions.map((p) => ({
+                                  id: p.id,
+                                  label: p.name,
+                                  sublabel: p.color ?? undefined,
+                                }))}
+                                onChange={(name, selected) => {
+                                  if (selected) {
+                                    const p = productOptions.find((x) => x.id === selected.id);
+                                    updateItem(idx, {
+                                      product_name: name,
+                                      product_id: selected.id,
+                                      unit_price: form.type === "purchase" ? (p?.purchase_price ?? 0) : (p?.sale_price ?? 0),
+                                    });
+                                  } else {
+                                    updateItem(idx, { product_name: name, product_id: "" });
+                                  }
+                                }}
                                 placeholder="상품명 입력"
-                                className={`w-full rounded border px-2 py-1 text-sm outline-none focus:border-neutral-400 ${isNew ? "border-blue-300 bg-blue-50" : "border-neutral-200 bg-white"}`}
+                                className={isNew ? "border-blue-300 bg-blue-50" : undefined}
+                                maxLength={100}
                               />
-                              <datalist id={`prd-list-${idx}`}>
-                                {productOptions.map((p) => (
-                                  <option key={p.id} value={p.name} />
-                                ))}
-                              </datalist>
                               <input
                                 value={it.product_color}
                                 onChange={(e) => updateItem(idx, { product_color: e.target.value })}
                                 placeholder="컬러 (선택)"
+                                maxLength={50}
                                 className="w-full rounded border border-neutral-200 bg-white px-2 py-1 text-xs outline-none focus:border-neutral-400"
                               />
                               {isNew && (
@@ -796,6 +906,7 @@ export function TransactionsPage() {
               value={form.memo ?? ""}
               onChange={(e) => setForm({ ...form, memo: e.target.value })}
               placeholder="예: 봄 신상 10개"
+              maxLength={500}
             />
           </Field>
 
@@ -815,6 +926,7 @@ export function TransactionsPage() {
                 onChange={(e) => setTemplateName(e.target.value)}
                 placeholder="템플릿 이름 (예: 삼촌 사입)"
                 className="flex-1"
+                maxLength={100}
               />
               <Button type="button" size="sm" onClick={onSaveTemplate} disabled={!templateName.trim()}>
                 저장

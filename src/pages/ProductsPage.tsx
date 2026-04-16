@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useToast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
@@ -38,6 +39,7 @@ const emptyColorRow: ColorRow = {
 };
 
 export function ProductsPage() {
+  const toast = useToast();
   const { products, load, add, update, remove, loading, error } = useProductStore();
   const { counterparties, load: loadCp } = useCounterpartyStore();
   const [open, setOpen] = useState(false);
@@ -169,7 +171,7 @@ export function ProductsPage() {
       await remove(deleteTarget.id);
       setDeleteTarget(null);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "삭제에 실패했습니다.");
+      toast(err instanceof Error ? err.message : "삭제에 실패했습니다.");
       setDeleteTarget(null);
     }
   }
@@ -186,7 +188,7 @@ export function ProductsPage() {
       await update(adjustTarget.id, { stock: Math.trunc(Number(adjustValue) || 0) });
       setAdjustTarget(null);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "재고 조정에 실패했습니다.");
+      toast(err instanceof Error ? err.message : "재고 조정에 실패했습니다.");
     }
   }
 
@@ -215,6 +217,7 @@ export function ProductsPage() {
       )}
 
       <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b border-neutral-200 bg-neutral-50 text-left text-xs uppercase text-neutral-500">
             <tr>
@@ -420,6 +423,7 @@ export function ProductsPage() {
             })()}
           </tbody>
         </table>
+        </div>
       </div>
 
       <p className="text-xs text-neutral-400">
@@ -438,6 +442,7 @@ export function ProductsPage() {
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="예: 봄 원피스"
+                maxLength={100}
               />
             </Field>
             <Field label="깔(컬러)">
@@ -445,6 +450,7 @@ export function ProductsPage() {
                 value={form.color ?? ""}
                 onChange={(e) => setForm({ ...form, color: e.target.value })}
                 placeholder="예: 블랙 / 화이트"
+                maxLength={50}
               />
             </Field>
             <Field label="기본 거래처" hint="이 상품을 주로 구매하는 삼촌/공급업체">
@@ -527,6 +533,7 @@ export function ProductsPage() {
               <Input
                 value={form.memo ?? ""}
                 onChange={(e) => setForm({ ...form, memo: e.target.value })}
+                maxLength={500}
               />
             </Field>
             {formError && (
@@ -552,7 +559,7 @@ export function ProductsPage() {
           <form onSubmit={onSubmit} className="space-y-4">
             {/* 공통 필드 */}
             <Field label="상품명" required>
-              <Input value={createShared.name} onChange={e => setCreateShared({...createShared, name: e.target.value})} placeholder="예: 봄 원피스" />
+              <Input value={createShared.name} onChange={e => setCreateShared({...createShared, name: e.target.value})} placeholder="예: 봄 원피스" maxLength={100} />
             </Field>
             <Field label="기본 거래처" hint="이 상품을 주로 구매하는 삼촌/공급업체">
               <Select value={createShared.counterparty_id ?? ""} onChange={e => setCreateShared({...createShared, counterparty_id: e.target.value || null})}>
@@ -572,7 +579,7 @@ export function ProductsPage() {
               </Field>
             </div>
             <Field label="메모">
-              <Input value={createShared.memo ?? ""} onChange={e => setCreateShared({...createShared, memo: e.target.value})} />
+              <Input value={createShared.memo ?? ""} onChange={e => setCreateShared({...createShared, memo: e.target.value})} maxLength={500} />
             </Field>
 
             {/* 색상 행들 */}
@@ -596,6 +603,7 @@ export function ProductsPage() {
                         value={cr.color}
                         onChange={e => { const next = [...colorRows]; next[i] = {...cr, color: e.target.value}; setColorRows(next); }}
                         placeholder="색상 (예: 흰색, 블랙)"
+                        maxLength={50}
                       />
                       <Input
                         type="number"

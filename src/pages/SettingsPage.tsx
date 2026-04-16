@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/ui/field";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Modal } from "@/components/ui/modal";
 import { getCurrentUser, updateUser, resetSheetSync, syncAllTransactions, restoreFromSheet, exportAllData, importAllData, syncStockToSheet, syncSummaryToSheet } from "@/lib/db";
 import type { TaxType, User } from "@/types";
 import {
@@ -170,16 +171,14 @@ export function SettingsPage() {
   const [driveBusy, setDriveBusy] = useState(false);
   const [driveStatus, setDriveStatus] = useState<string | null>(null);
   const [driveError, setDriveError] = useState<string | null>(null);
-
-  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
-  const clientSecret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET ?? "";
+  const [confirmRestore, setConfirmRestore] = useState(false);
 
   async function onDriveBackup() {
     setDriveBusy(true);
     setDriveStatus(null);
     setDriveError(null);
     try {
-      const msg = await invoke<string>("drive_backup_db", { clientId, clientSecret });
+      const msg = await invoke<string>("drive_backup_db");
       setDriveStatus(msg);
     } catch (e) {
       const msg = e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
@@ -190,12 +189,11 @@ export function SettingsPage() {
   }
 
   async function onDriveRestore() {
-    if (!confirm("드라이브 백업에서 DB를 복원하면 현재 데이터가 교체됩니다. 계속할까요?")) return;
     setDriveBusy(true);
     setDriveStatus(null);
     setDriveError(null);
     try {
-      const msg = await invoke<string>("drive_restore_db", { clientId, clientSecret });
+      const msg = await invoke<string>("drive_restore_db");
       setDriveStatus(msg);
     } catch (e) {
       const msg = e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
@@ -735,16 +733,49 @@ export function SettingsPage() {
                 {driveBusy ? "처리 중…" : "드라이브에 백업"}
               </Button>
               <Button
-                onClick={onDriveRestore}
+                onClick={() => setConfirmRestore(true)}
                 disabled={driveBusy || !googleConnected}
                 variant="secondary"
               >
-                {driveBusy ? "처리 중…" : "드라이브에서 복원"}
+                드라이브에서 복원
               </Button>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      <Modal
+        open={confirmRestore}
+        title="드라이브에서 복원"
+        onClose={() => setConfirmRestore(false)}
+        className="max-w-sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-neutral-700">
+            드라이브 백업에서 DB를 복원하면 현재 데이터가 교체됩니다. 계속할까요?
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setConfirmRestore(false)}
+              disabled={driveBusy}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              disabled={driveBusy}
+              onClick={async () => {
+                setConfirmRestore(false);
+                await onDriveRestore();
+              }}
+            >
+              {driveBusy ? "처리 중…" : "복원"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

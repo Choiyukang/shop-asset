@@ -117,6 +117,13 @@ INSERT INTO users (id, name, tax_type) VALUES
     ('usr-default', '사장님', '일반과세자')
 ON CONFLICT (id) DO NOTHING;
 
+-- 재고 원자적 조정 함수 (Race Condition 방지)
+-- Supabase SQL Editor에서 실행 필요
+CREATE OR REPLACE FUNCTION adjust_stock(p_id TEXT, p_delta INT)
+RETURNS void AS $$
+  UPDATE products SET stock = stock + p_delta WHERE id = p_id;
+$$ LANGUAGE sql;
+
 -- RLS 비활성화 (개인용 앱)
 ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE counterparties DISABLE ROW LEVEL SECURITY;

@@ -25,7 +25,8 @@ export function todayISO(): string {
 }
 
 export function uuid(prefix = "id"): string {
-  const rand = Math.random().toString(36).slice(2, 10);
-  const ts = Date.now().toString(36);
-  return `${prefix}-${ts}-${rand}`;
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${prefix}-${hex}`;
 }

@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
+import { useToast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -108,6 +109,7 @@ function DebtPanel({ counterparty, onSettled }: { counterparty: Counterparty; on
 }
 
 export function CounterpartiesPage() {
+  const toast = useToast();
   const { counterparties, load, add, remove, loading, error } = useCounterpartyStore();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -198,6 +200,7 @@ export function CounterpartiesPage() {
       )}
 
       <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b border-neutral-200 bg-neutral-50 text-left text-xs uppercase text-neutral-500">
             <tr>
@@ -273,6 +276,7 @@ export function CounterpartiesPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       <Modal
@@ -309,7 +313,7 @@ export function CounterpartiesPage() {
                   await remove(confirmDeleteId);
                   setConfirmDeleteId(null);
                 } catch (err) {
-                  alert(err instanceof Error ? err.message : "거래처 삭제에 실패했습니다.");
+                  toast(err instanceof Error ? err.message : "거래처 삭제에 실패했습니다.");
                 } finally {
                   setDeleting(false);
                 }
@@ -332,6 +336,7 @@ export function CounterpartiesPage() {
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="예: 삼촌 / ㅇㅇ유통"
+              maxLength={100}
             />
           </Field>
           <Field label="타입" required>
@@ -351,6 +356,7 @@ export function CounterpartiesPage() {
               value={form.phone ?? ""}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
               placeholder="010-1234-5678"
+              maxLength={20}
             />
           </Field>
           <Field label="수수료율 (%)" hint="삼촌·중간 공급자에게 지급할 기본 수수료율 (0-100)">

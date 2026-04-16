@@ -23,25 +23,7 @@ export interface TransactionRow {
   memo: string;
 }
 
-function clientId(): string {
-  const id = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-  if (!id || typeof id !== "string" || id.trim() === "") {
-    throw new Error(
-      "VITE_GOOGLE_CLIENT_ID가 설정되지 않았습니다. .env 파일을 확인하세요.",
-    );
-  }
-  return id;
-}
 
-function clientSecret(): string {
-  const secret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
-  if (!secret || typeof secret !== "string" || secret.trim() === "") {
-    throw new Error(
-      "VITE_GOOGLE_CLIENT_SECRET이 설정되지 않았습니다. .env 파일을 확인하세요.",
-    );
-  }
-  return secret;
-}
 
 export function hasGoogleClientId(): boolean {
   const id = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -49,10 +31,7 @@ export function hasGoogleClientId(): boolean {
 }
 
 export async function connectGoogle(): Promise<GoogleTokens> {
-  const tokens = await invoke<GoogleTokens>("google_oauth_start", {
-    clientId: clientId(),
-    clientSecret: clientSecret(),
-  });
+  const tokens = await invoke<GoogleTokens>("google_oauth_start");
   cachedTokens = tokens;
   return tokens;
 }
@@ -74,10 +53,7 @@ async function getAccessToken(): Promise<string> {
   if (cachedTokens && cachedTokens.expires_at_ms - 60_000 > now) {
     return cachedTokens.access_token;
   }
-  const tokens = await invoke<GoogleTokens>("google_get_access_token", {
-    clientId: clientId(),
-    clientSecret: clientSecret(),
-  });
+  const tokens = await invoke<GoogleTokens>("google_get_access_token");
   cachedTokens = tokens;
   return tokens.access_token;
 }

@@ -13,6 +13,11 @@ use sha2::{Digest, Sha256};
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
+// 컴파일 시점에 src-tauri/.env 에서 주입 (build.rs 참고)
+// JS 번들에 포함되지 않음
+const CLIENT_ID: &str = env!("GOOGLE_CLIENT_ID");
+const CLIENT_SECRET: &str = env!("GOOGLE_CLIENT_SECRET");
+
 const KEYRING_SERVICE: &str = "mallbook";
 const KEYRING_USER: &str = "google_refresh_token";
 const KEYRING_EMAIL: &str = "google_email";
@@ -317,15 +322,9 @@ async fn refresh_access(
 #[tauri::command]
 pub async fn google_oauth_start(
     app: tauri::AppHandle,
-    client_id: String,
-    client_secret: String,
 ) -> Result<GoogleTokens, String> {
-    if client_id.trim().is_empty() {
-        return Err("client_id is empty".into());
-    }
-    if client_secret.trim().is_empty() {
-        return Err("client_secret is empty".into());
-    }
+    let client_id = CLIENT_ID;
+    let client_secret = CLIENT_SECRET;
 
     // PKCE
     let verifier = random_b64url(64);
@@ -395,9 +394,9 @@ pub async fn google_oauth_start(
 }
 
 #[tauri::command]
-pub async fn google_get_access_token(client_id: String, client_secret: String) -> Result<GoogleTokens, String> {
+pub async fn google_get_access_token() -> Result<GoogleTokens, String> {
     let rt = load_refresh_token()?.ok_or_else(|| "not_connected".to_string())?;
-    let tokens = refresh_access(&client_id, &client_secret, &rt).await?;
+    let tokens = refresh_access(CLIENT_ID, CLIENT_SECRET, &rt).await?;
     let email = load_email().unwrap_or_default();
     let expires_at_ms = now_ms() + tokens.expires_in.unwrap_or(3600) * 1000;
     Ok(GoogleTokens {
@@ -459,11 +458,9 @@ async fn drive_find_backup(access_token: &str) -> Result<Option<String>, String>
 #[tauri::command]
 pub async fn drive_backup_db(
     app: tauri::AppHandle,
-    client_id: String,
-    client_secret: String,
 ) -> Result<String, String> {
     // 액세스 토큰 갱신
-    let tokens = google_get_access_token(client_id, client_secret).await?;
+    let tokens = google_get_access_token().await?;
     let access_token = tokens.access_token;
 
     // DB 파일 읽기
@@ -530,10 +527,8 @@ pub async fn drive_backup_db(
 #[tauri::command]
 pub async fn drive_restore_db(
     app: tauri::AppHandle,
-    client_id: String,
-    client_secret: String,
 ) -> Result<String, String> {
-    let tokens = google_get_access_token(client_id, client_secret).await?;
+    let tokens = google_get_access_token().await?;
     let access_token = tokens.access_token;
 
     let file_id = drive_find_backup(&access_token)

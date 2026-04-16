@@ -90,6 +90,35 @@ fn bot_start_if_configured(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+// ── Supabase 인증 커맨드 ─────────────────────────────────────────────────
+/// 앱 전용 계정으로 Supabase 로그인 → access_token + refresh_token 반환
+/// 이메일/비번은 컴파일 타임 상수 (JS 번들에 노출되지 않음)
+#[tauri::command]
+async fn supabase_sign_in(url: String, anon_key: String) -> Result<serde_json::Value, String> {
+    const EMAIL: &str = env!("SUPABASE_APP_EMAIL");
+    const PASSWORD: &str = env!("SUPABASE_APP_PASSWORD");
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/auth/v1/token?grant_type=password", url))
+        .header("apikey", &anon_key)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({ "email": EMAIL, "password": PASSWORD }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Supabase 인증 실패 ({status}): {body}"));
+    }
+
+    resp.json::<serde_json::Value>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ── 알림 커맨드 ──────────────────────────────────────────────────────────
 #[tauri::command]
 fn check_and_notify(app: tauri::AppHandle) -> Result<(), String> {
@@ -219,6 +248,7 @@ pub fn run() {
             bot_get_token,
             bot_start_if_configured,
             check_and_notify,
+            supabase_sign_in,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { UpdateBanner } from "@/components/UpdateBanner";
+import { ensureAuth } from "@/lib/supabase";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { DashboardPage } from "@/pages/DashboardPage";
@@ -31,6 +32,9 @@ const router = createBrowserRouter([
 
 function App() {
   useEffect(() => {
+    // Supabase 앱 계정 인증 (RLS 통과용)
+    ensureAuth().catch((err) => console.error("[auth] ensureAuth 실패:", err));
+
     // DB 초기화 완료 후 저장된 봇 토큰이 있으면 봇 자동 시작
     const timer = setTimeout(() => {
       invoke("bot_start_if_configured").catch(() => {});

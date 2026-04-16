@@ -282,18 +282,11 @@ export async function createTransaction(
         throwIf(itemErr);
         insertedItemIds.push(itemId);
         const delta = input.type === "purchase" ? qty : -qty;
-        // Fetch current stock, apply delta, update
-        const { data: prodRows, error: prodErr } = await supabase
-          .from("products")
-          .select("stock")
-          .eq("id", it.product_id)
-          .limit(1);
-        throwIf(prodErr);
-        const currentStock = Number((prodRows?.[0] as { stock?: number } | undefined)?.stock ?? 0);
-        const { error: updErr } = await supabase
-          .from("products")
-          .update({ stock: currentStock + delta })
-          .eq("id", it.product_id);
+        // 원자적 재고 조정 (Race Condition 방지)
+        const { error: updErr } = await supabase.rpc("adjust_stock", {
+          p_id: it.product_id,
+          p_delta: delta,
+        });
         throwIf(updErr);
         stockDeltas.push({ productId: it.product_id, delta });
       }
@@ -323,16 +316,10 @@ export async function createTransaction(
     // Best-effort rollback.
     for (const s of stockDeltas) {
       try {
-        const { data: prodRows } = await supabase
-          .from("products")
-          .select("stock")
-          .eq("id", s.productId)
-          .limit(1);
-        const currentStock = Number((prodRows?.[0] as { stock?: number } | undefined)?.stock ?? 0);
-        await supabase
-          .from("products")
-          .update({ stock: currentStock - s.delta })
-          .eq("id", s.productId);
+        await supabase.rpc("adjust_stock", {
+          p_id: s.productId,
+          p_delta: -s.delta,
+        });
       } catch {
         // ignore
       }
@@ -433,16 +420,10 @@ export async function deleteTransaction(id: string): Promise<void> {
     throwIf(itemsErr);
     for (const item of (items ?? []) as { product_id: string; quantity: number }[]) {
       const reverseDelta = type === "purchase" ? -item.quantity : item.quantity;
-      const { data: prodRows } = await supabase
-        .from("products")
-        .select("stock")
-        .eq("id", item.product_id)
-        .limit(1);
-      const currentStock = Number((prodRows?.[0] as { stock?: number } | undefined)?.stock ?? 0);
-      await supabase
-        .from("products")
-        .update({ stock: currentStock + reverseDelta })
-        .eq("id", item.product_id);
+      await supabase.rpc("adjust_stock", {
+        p_id: item.product_id,
+        p_delta: reverseDelta,
+      });
     }
   }
 
@@ -989,6 +970,35 @@ export async function exportAllData(): Promise<string> {
   );
 }
 
+function validateImportRow(table: string, r: Record<string, unknown>): string | null {
+  if (typeof r.id !== "string" || !r.id.trim()) return "id가 없거나 올바르지 않습니다";
+  if (table === "counterparties") {
+    if (typeof r.name !== "string" || !r.name.trim()) return "name 필드가 올바르지 않습니다";
+    if (!["supplier", "customer", "personal"].includes(r.type as string)) return "type 필드가 올바르지 않습니다";
+  }
+  if (table === "products") {
+    if (typeof r.name !== "string" || !r.name.trim()) return "name 필드가 올바르지 않습니다";
+    if (typeof r.stock !== "number") return "stock 필드가 올바르지 않습니다";
+  }
+  if (table === "transactions") {
+    if (typeof r.date !== "string") return "date 필드가 올바르지 않습니다";
+    if (!["purchase", "sale", "expense"].includes(r.type as string)) return "type 필드가 올바르지 않습니다";
+    if (typeof r.amount !== "number") return "amount 필드가 올바르지 않습니다";
+  }
+  if (table === "transaction_items") {
+    if (typeof r.transaction_id !== "string") return "transaction_id 필드가 올바르지 않습니다";
+    if (typeof r.product_id !== "string") return "product_id 필드가 올바르지 않습니다";
+    if (typeof r.quantity !== "number" || r.quantity <= 0) return "quantity 필드가 올바르지 않습니다";
+    if (typeof r.unit_price !== "number" || r.unit_price < 0) return "unit_price 필드가 올바르지 않습니다";
+  }
+  if (table === "tax_records") {
+    if (typeof r.transaction_id !== "string") return "transaction_id 필드가 올바르지 않습니다";
+    if (typeof r.supply_amount !== "number") return "supply_amount 필드가 올바르지 않습니다";
+    if (typeof r.vat_amount !== "number") return "vat_amount 필드가 올바르지 않습니다";
+  }
+  return null;
+}
+
 export async function importAllData(
   json: string,
 ): Promise<{ imported: number; skipped: number; errors: string[] }> {
@@ -1008,6 +1018,12 @@ export async function importAllData(
   async function upsertRows(table: string, rows: unknown[]) {
     for (const row of rows) {
       const r = row as Record<string, unknown>;
+      const validationError = validateImportRow(table, r);
+      if (validationError) {
+        errors.push(`${table}[${r.id ?? "?"}]: ${validationError}`);
+        skipped++;
+        continue;
+      }
       try {
         const { data: existing, error: selErr } = await supabase
           .from(table)
