@@ -3,9 +3,9 @@
   "productName": "shop-asset",
   "identifier": "com.yukangchoi.shop-asset",
   "build": {
-    "beforeDevCommand": "node scripts/sync-version.js && npm run dev",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "node scripts/sync-version.js && npm run build",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {

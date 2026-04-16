@@ -79,7 +79,7 @@ export function TransactionsPage() {
   const [templates, setTemplates] = useState<TransactionTemplate[]>([]);
   const [templateName, setTemplateName] = useState("");
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
-  const [overstockConfirm, setOverstockConfirm] = useState<{ name: string; stock: number; quantity: number } | null>(null);
+  const [overstockConfirm, setOverstockConfirm] = useState<{ name: string; stock: number; quantity: number; others: number } | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -314,13 +314,14 @@ export function TransactionsPage() {
         }
       }
       if (form.type === "sale") {
-        const overstock = form.items.find((it) => {
+        const overstockItems = form.items.filter((it) => {
           const p = productMap.get(it.product_id);
           return p && it.quantity > p.stock;
         });
-        if (overstock) {
-          const p = productMap.get(overstock.product_id);
-          setOverstockConfirm({ name: p?.name ?? "", stock: p?.stock ?? 0, quantity: overstock.quantity });
+        if (overstockItems.length > 0) {
+          const first = overstockItems[0]!;
+          const p = productMap.get(first.product_id);
+          setOverstockConfirm({ name: p?.name ?? "", stock: p?.stock ?? 0, quantity: first.quantity, others: overstockItems.length - 1 });
           return;
         }
       }
@@ -546,7 +547,10 @@ export function TransactionsPage() {
           <p className="text-sm text-neutral-700">
             <span className="font-semibold">'{overstockConfirm?.name}'</span>의 현재 재고(
             <span className="font-semibold">{overstockConfirm?.stock}</span>)보다 수량(
-            <span className="font-semibold">{overstockConfirm?.quantity}</span>)이 많습니다. 그래도 진행할까요?
+            <span className="font-semibold">{overstockConfirm?.quantity}</span>)이 많습니다.
+            {(overstockConfirm?.others ?? 0) > 0 && (
+              <> 외 <span className="font-semibold">{overstockConfirm?.others}개</span> 상품도 재고 초과입니다.</>
+            )} 그래도 진행할까요?
           </p>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setOverstockConfirm(null)}>

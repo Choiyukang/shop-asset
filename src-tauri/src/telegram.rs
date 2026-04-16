@@ -126,7 +126,7 @@ fn q_today(db: &Connection) -> String {
     });
 
     format!(
-        "📅 *{}* 오늘 요약\n\n💚 매출: {}\n🔴 지출: {}\n━━━━━━━━━━\n💰 순이익: {}\n📋 거래 건수: {}건",
+        "📅 *{}* 오늘 요약\n\n💚 매출: {}\n🔴 지출·매입: {}\n━━━━━━━━━━\n💰 순이익: {}\n📋 거래 건수: {}건",
         today.replace('-', "\\-"),
         krw(sales),
         krw(expense),
@@ -163,7 +163,7 @@ fn q_month(db: &Connection) -> String {
     });
 
     format!(
-        "📊 *{}* 이번달 현황\n\n💚 매출: {}\n🔴 지출: {}\n━━━━━━━━━━\n💰 순이익: {}\n📋 거래 건수: {}건",
+        "📊 *{}* 이번달 현황\n\n💚 매출: {}\n🔴 지출·매입: {}\n━━━━━━━━━━\n💰 순이익: {}\n📋 거래 건수: {}건",
         month.replace('-', "\\-"),
         krw(sales),
         krw(expense),
@@ -216,6 +216,7 @@ fn q_due(db: &Connection) -> String {
          FROM transactions t
          LEFT JOIN counterparties c ON c.id=t.counterparty_id
          WHERE t.date=date('now','localtime') AND t.type='purchase' AND t.payment_status='pending'
+         AND t.counterparty_id IS NOT NULL
          GROUP BY t.counterparty_id",
     ) {
         Ok(s) => s,
@@ -242,7 +243,7 @@ fn q_due(db: &Connection) -> String {
 
 fn q_stock(db: &Connection) -> String {
     let mut stmt = match db.prepare(
-        "SELECT name, color, stock FROM products WHERE stock <= 5 ORDER BY stock ASC",
+        "SELECT name, color, stock FROM products WHERE stock <= 5 AND is_deleted = 0 ORDER BY stock ASC",
     ) {
         Ok(s) => s,
         Err(e) => return format!("❌ DB 오류: {}", e),

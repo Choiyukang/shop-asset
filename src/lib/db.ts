@@ -341,6 +341,10 @@ export async function createTransaction(
     } catch {
       // ignore
     }
+    const rollbackFailed = err instanceof Error && err.message.includes("rollback");
+    if (rollbackFailed) {
+      throw new Error("저장 중 오류가 발생했으며 일부 데이터가 불완전하게 저장됐을 수 있습니다. Supabase 대시보드에서 확인해 주세요.");
+    }
     throw err;
   }
 
@@ -498,7 +502,7 @@ export async function resetSheetSync(): Promise<void> {
   const { error } = await supabase
     .from("transactions")
     .update({ synced_to_sheet: 0 })
-    .neq("id", "__none__");
+    .not("id", "is", null);
   throwIf(error);
 }
 
@@ -592,11 +596,17 @@ export async function syncAllTransactions(
       done++;
       onProgress?.(done, total);
     }
-    await writeTabRows(sheetId, month, HEADER, dataRows);
-    await supabase
-      .from("transactions")
-      .update({ synced_to_sheet: 1 })
-      .like("date", `${month}%`);
+    try {
+      await writeTabRows(sheetId, month, HEADER, dataRows);
+      await supabase
+        .from("transactions")
+        .update({ synced_to_sheet: 1 })
+        .like("date", `${month}%`);
+    } catch {
+      // writeTabRows 실패 시 해당 월 전체를 failed로 처리
+      failed += dataRows.length;
+      success -= dataRows.length;
+    }
   }
   return { success, failed };
 }
@@ -662,14 +672,13 @@ export async function restoreFromSheet(
       : "";
     if (!type) { skipped++; onProgress?.(i + 1, total); continue; }
 
-    const key = `${date}|${type}|${amount}`;
+    const cp = counterpartyName ? cpByName.get(counterpartyName) : null;
+    const key = `${date}|${type}|${amount}|${cp?.id ?? ""}`;
     if (existingSet.has(key)) {
       skipped++;
       onProgress?.(i + 1, total);
       continue;
     }
-
-    const cp = counterpartyName ? cpByName.get(counterpartyName) : null;
 
     let cat = categoryName ? catByName.get(categoryName) : null;
     if (!cat) {
@@ -1160,7 +1169,13 @@ export async function saveTransactionTemplate(
     commission_amount: number;
   },
 ): Promise<void> {
-  const id = uuid("tpl");
+  // 기존 템플릿의 ID를 유지해야 삭제가 정상 동작함
+  const { data: existing } = await supabase
+    .from("transaction_templates")
+    .select("id")
+    .eq("name", name)
+    .limit(1);
+  const id = (existing?.[0] as { id?: string } | undefined)?.id ?? uuid("tpl");
   const { error } = await supabase.from("transaction_templates").upsert(
     {
       id,

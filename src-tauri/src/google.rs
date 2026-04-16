@@ -557,10 +557,19 @@ pub async fn drive_restore_db(
 
     // 현재 DB를 .bak으로 임시 보존 후 덮어쓰기
     let bak_path = db_path.with_extension("db.bak");
-    if db_path.exists() {
+    let had_backup = db_path.exists();
+    if had_backup {
         std::fs::copy(&db_path, &bak_path).map_err(|e| format!("bak copy: {e}"))?;
     }
-    std::fs::write(&db_path, &bytes).map_err(|e| format!("db write: {e}"))?;
+    if let Err(e) = std::fs::write(&db_path, &bytes) {
+        // 쓰기 실패 시 .bak에서 원본 복구
+        if had_backup {
+            let _ = std::fs::copy(&bak_path, &db_path);
+        }
+        return Err(format!("db write: {e}"));
+    }
+    // 성공 시 .bak 삭제
+    let _ = std::fs::remove_file(&bak_path);
 
     Ok("복원이 완료되었습니다. 앱을 재시작하면 변경사항이 적용됩니다.".to_string())
 }
