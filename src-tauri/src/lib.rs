@@ -224,6 +224,24 @@ pub fn run() {
             sql: include_str!("../migrations/20260415000008_product_pending_delivery.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 9,
+            description: "counterparty soft delete",
+            sql: include_str!("../migrations/20260415000009_counterparty_soft_delete.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 10,
+            description: "product soft delete",
+            sql: include_str!("../migrations/20260415000010_product_soft_delete.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 11,
+            description: "add telegram chat id",
+            sql: include_str!("../migrations/20260416000011_add_telegram_chat_id.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

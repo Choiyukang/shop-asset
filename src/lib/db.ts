@@ -647,12 +647,14 @@ export async function restoreFromSheet(
     const typeKoVal = row[1] ?? "";
     const counterpartyName = row[2] ?? "";
     const categoryName = row[3] ?? "";
-    const commission = Number(row[5]) || 0;
-    const amount = Number(row[6]) || 0;
+    const commission = Number(row[5]);
+    const amount = Number(row[6]);
     const paymentStatus = (row[7] === "외상" || row[7] === "대납") ? "pending" : "paid";
-    const memo = row[8] ?? "";
+    const memo = (row[8] ?? "").slice(0, 2000);
 
-    if (!date) { skipped++; onProgress?.(i + 1, total); continue; }
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { skipped++; onProgress?.(i + 1, total); continue; }
+    if (!Number.isFinite(amount) || amount < 0 || amount > 10_000_000_000) { skipped++; onProgress?.(i + 1, total); continue; }
+    if (!Number.isFinite(commission) || commission < 0) { skipped++; onProgress?.(i + 1, total); continue; }
 
     const type = typeKoVal === "구매" ? "purchase"
       : typeKoVal === "판매" ? "sale"
@@ -1015,7 +1017,16 @@ export async function importAllData(
   let skipped = 0;
   const errors: string[] = [];
 
+  const ALLOWED_COLUMNS: Record<string, string[]> = {
+    counterparties: ["id","name","type","phone","business_number","memo","commission_rate","is_deleted","created_at"],
+    products: ["id","name","color","purchase_price","sale_price","stock","memo","counterparty_id","purchase_date","is_pending_delivery","expected_arrival_date","is_deleted","created_at"],
+    transactions: ["id","date","type","amount","counterparty_id","category_id","memo","payment_status","commission_amount","created_at"],
+    transaction_items: ["id","transaction_id","product_id","quantity","unit_price"],
+    tax_records: ["id","transaction_id","supply_amount","vat_amount","is_refundable","tax_invoice_issued"],
+  };
+
   async function upsertRows(table: string, rows: unknown[]) {
+    const allowed = ALLOWED_COLUMNS[table];
     for (const row of rows) {
       const r = row as Record<string, unknown>;
       const validationError = validateImportRow(table, r);
@@ -1024,6 +1035,9 @@ export async function importAllData(
         skipped++;
         continue;
       }
+      const clean = allowed
+        ? Object.fromEntries(Object.entries(r).filter(([k]) => allowed.includes(k)))
+        : r;
       try {
         const { data: existing, error: selErr } = await supabase
           .from(table)
@@ -1039,7 +1053,7 @@ export async function importAllData(
           skipped++;
           continue;
         }
-        const { error: insErr } = await supabase.from(table).insert(r);
+        const { error: insErr } = await supabase.from(table).insert(clean);
         if (insErr) {
           errors.push(`${table}: ${insErr.message}`);
           skipped++;

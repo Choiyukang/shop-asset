@@ -124,13 +124,29 @@ RETURNS void AS $$
   UPDATE products SET stock = stock + p_delta WHERE id = p_id;
 $$ LANGUAGE sql;
 
--- RLS 비활성화 (개인용 앱)
-ALTER TABLE users DISABLE ROW LEVEL SECURITY;
-ALTER TABLE counterparties DISABLE ROW LEVEL SECURITY;
-ALTER TABLE categories DISABLE ROW LEVEL SECURITY;
-ALTER TABLE products DISABLE ROW LEVEL SECURITY;
-ALTER TABLE transactions DISABLE ROW LEVEL SECURITY;
-ALTER TABLE tax_records DISABLE ROW LEVEL SECURITY;
-ALTER TABLE transaction_items DISABLE ROW LEVEL SECURITY;
-ALTER TABLE transaction_templates DISABLE ROW LEVEL SECURITY;
-ALTER TABLE cashflow_items DISABLE ROW LEVEL SECURITY;
+-- RLS 활성화 (단일 사용자 앱 — 앱 계정 UID만 접근 허용)
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE counterparties ENABLE ROW LEVEL SECURITY;
+ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tax_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transaction_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transaction_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cashflow_items ENABLE ROW LEVEL SECURITY;
+
+-- 단일 사용자 정책 (앱 전용 계정 UID)
+-- ⚠️  아래 UID는 Supabase Dashboard > Authentication > Users 에서 확인 후 교체
+DO $$
+DECLARE t text;
+BEGIN
+  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS "app user only" ON %I', t);
+    EXECUTE format(
+      'CREATE POLICY "app user only" ON %I FOR ALL TO authenticated
+       USING (auth.uid() = ''02cef440-91d4-42d5-95f5-4bd9d1730bae'')
+       WITH CHECK (auth.uid() = ''02cef440-91d4-42d5-95f5-4bd9d1730bae'')',
+    t);
+  END LOOP;
+END $$;

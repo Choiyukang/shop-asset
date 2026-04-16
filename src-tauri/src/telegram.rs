@@ -3,6 +3,27 @@ use rusqlite::Connection;
 use serde::Deserialize;
 use std::path::PathBuf;
 
+fn read_allowed_chat_id(db_path: &PathBuf) -> Option<i64> {
+    let conn = rusqlite::Connection::open(db_path).ok()?;
+    conn.query_row(
+        "SELECT telegram_allowed_chat_id FROM users ORDER BY created_at ASC LIMIT 1",
+        [],
+        |r| r.get::<_, Option<i64>>(0),
+    )
+    .ok()
+    .flatten()
+}
+
+fn write_allowed_chat_id(db_path: &PathBuf, chat_id: i64) {
+    if let Ok(conn) = rusqlite::Connection::open(db_path) {
+        let _ = conn.execute(
+            "UPDATE users SET telegram_allowed_chat_id = ?1 \
+             WHERE id = (SELECT id FROM users ORDER BY created_at ASC LIMIT 1)",
+            rusqlite::params![chat_id],
+        );
+    }
+}
+
 const HELP: &str = "📦 *MallBook 명령어*\n\n/today \\- 오늘 요약\n/month \\- 이번달 현황\n/unpaid \\- 미수금 현황\n/due \\- 오늘 줄 돈\n/stock \\- 재고 부족\n/tax \\- 부가세 현황";
 
 #[derive(Deserialize)]
@@ -326,6 +347,25 @@ pub async fn run_bot(token: String, db_path: PathBuf) {
                         let Some(text) = msg.text else { continue };
                         let chat_id = msg.chat.id;
                         let cmd = text.split_whitespace().next().unwrap_or("");
+
+                        // chat_id 화이트리스트 체크
+                        match read_allowed_chat_id(&db_path) {
+                            Some(id) if id != chat_id => {
+                                eprintln!("[mallbook-bot] 허가되지 않은 chat_id: {}", chat_id);
+                                continue;
+                            }
+                            None if cmd == "/start" => {
+                                write_allowed_chat_id(&db_path, chat_id);
+                                send_msg(&client, &token, chat_id,
+                                    "✅ *MallBook 봇 페어링 완료\\!*\n이 채팅에서만 명령어를 사용할 수 있습니다\\.\n\n"
+                                ).await;
+                            }
+                            None => {
+                                eprintln!("[mallbook-bot] 페어링 미완료, 거부: chat_id={}", chat_id);
+                                continue;
+                            }
+                            _ => {}
+                        }
 
                         let response = match Connection::open(&db_path) {
                             Ok(db) => match cmd {
