@@ -314,6 +314,7 @@ export async function createTransaction(
     throwIf(taxErr);
   } catch (err) {
     // Best-effort rollback.
+    let rollbackFailed = false;
     for (const s of stockDeltas) {
       try {
         await supabase.rpc("adjust_stock", {
@@ -321,27 +322,26 @@ export async function createTransaction(
           p_delta: -s.delta,
         });
       } catch {
-        // ignore
+        rollbackFailed = true;
       }
     }
     for (const itemId of insertedItemIds) {
       try {
         await supabase.from("transaction_items").delete().eq("id", itemId);
       } catch {
-        // ignore
+        rollbackFailed = true;
       }
     }
     try {
       await supabase.from("tax_records").delete().eq("transaction_id", txnId);
     } catch {
-      // ignore
+      rollbackFailed = true;
     }
     try {
       await supabase.from("transactions").delete().eq("id", txnId);
     } catch {
-      // ignore
+      rollbackFailed = true;
     }
-    const rollbackFailed = err instanceof Error && err.message.includes("rollback");
     if (rollbackFailed) {
       throw new Error("저장 중 오류가 발생했으며 일부 데이터가 불완전하게 저장됐을 수 있습니다. Supabase 대시보드에서 확인해 주세요.");
     }
@@ -424,15 +424,18 @@ export async function deleteTransaction(id: string): Promise<void> {
     throwIf(itemsErr);
     for (const item of (items ?? []) as { product_id: string; quantity: number }[]) {
       const reverseDelta = type === "purchase" ? -item.quantity : item.quantity;
-      await supabase.rpc("adjust_stock", {
+      const { error: stockErr } = await supabase.rpc("adjust_stock", {
         p_id: item.product_id,
         p_delta: reverseDelta,
       });
+      throwIf(stockErr, "재고 복원 실패");
     }
   }
 
-  await supabase.from("transaction_items").delete().eq("transaction_id", id);
-  await supabase.from("tax_records").delete().eq("transaction_id", id);
+  const { error: itemDelErr } = await supabase.from("transaction_items").delete().eq("transaction_id", id);
+  throwIf(itemDelErr, "거래 항목 삭제 실패");
+  const { error: taxDelErr } = await supabase.from("tax_records").delete().eq("transaction_id", id);
+  throwIf(taxDelErr, "세금 기록 삭제 실패");
   const { error: delErr } = await supabase.from("transactions").delete().eq("id", id);
   throwIf(delErr);
 }
@@ -638,11 +641,11 @@ export async function restoreFromSheet(
 
   const { data: existing, error: existingErr } = await supabase
     .from("transactions")
-    .select("date, amount, type");
+    .select("date, amount, type, counterparty_id");
   throwIf(existingErr);
   const existingSet = new Set(
-    ((existing ?? []) as { date: string; amount: number; type: string }[]).map(
-      (e) => `${e.date}|${e.type}|${e.amount}`,
+    ((existing ?? []) as { date: string; amount: number; type: string; counterparty_id: string | null }[]).map(
+      (e) => `${e.date}|${e.type}|${e.amount}|${e.counterparty_id ?? ""}`,
     ),
   );
 
@@ -1029,7 +1032,7 @@ export async function importAllData(
   const ALLOWED_COLUMNS: Record<string, string[]> = {
     counterparties: ["id","name","type","phone","business_number","memo","commission_rate","is_deleted","created_at"],
     products: ["id","name","color","purchase_price","sale_price","stock","memo","counterparty_id","purchase_date","is_pending_delivery","expected_arrival_date","is_deleted","created_at"],
-    transactions: ["id","date","type","amount","counterparty_id","category_id","memo","payment_status","commission_amount","created_at"],
+    transactions: ["id","date","type","amount","counterparty_id","category_id","memo","payment_status","synced_to_sheet","commission_amount","created_at"],
     transaction_items: ["id","transaction_id","product_id","quantity","unit_price"],
     tax_records: ["id","transaction_id","supply_amount","vat_amount","is_refundable","tax_invoice_issued"],
   };
@@ -1283,13 +1286,15 @@ export async function exportStatementToSheet(
   const cpName = counterparties.find((c) => c.id === counterpartyId)?.name ?? counterpartyId;
   const tabName = `정산-${cpName}-${monthStr}`;
 
-  const HEADER = ["날짜", "유형", "상품내역", "금액", "결제상태"];
+  const HEADER = ["날짜", "유형", "분류", "금액", "수수료", "결제상태", "메모"];
   const dataRows: string[][] = rows.map((r) => [
     r.date,
     r.type === "purchase" ? "구매" : r.type === "sale" ? "판매" : "지출",
-    r.memo,
+    r.category,
     String(Math.trunc(r.amount)),
+    String(Math.trunc(r.commission_amount)),
     r.payment_status === "paid" ? "완료" : "대납",
+    r.memo,
   ]);
   await writeTabRows(user.google_sheet_id, tabName, HEADER, dataRows);
 }

@@ -12,11 +12,20 @@ export function formatKRW(amount: number): string {
 }
 
 export function formatDate(value: string | Date): string {
-  const d = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) return String(value);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+  if (typeof value === "string") {
+    // YYYY-MM-DD 형식은 UTC 파싱 없이 그대로 반환 (타임존 오프셋 방지)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  if (Number.isNaN(value.getTime())) return String(value);
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 

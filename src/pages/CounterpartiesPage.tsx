@@ -31,6 +31,7 @@ function DebtPanel({ counterparty, onSettled }: { counterparty: Counterparty; on
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [settling, setSettling] = useState<string | null>(null);
+  const [settleError, setSettleError] = useState<string | null>(null);
 
   useEffect(() => {
     getCounterpartyPendingTransactions(counterparty.id)
@@ -40,10 +41,13 @@ function DebtPanel({ counterparty, onSettled }: { counterparty: Counterparty; on
 
   async function onSettle(txn: Transaction) {
     setSettling(txn.id);
+    setSettleError(null);
     try {
       await settleTransaction(txn.id);
       setTxns((prev) => prev.filter((t) => t.id !== txn.id));
       onSettled();
+    } catch (err) {
+      setSettleError(err instanceof Error ? err.message : "정산 처리에 실패했습니다.");
     } finally {
       setSettling(null);
     }
@@ -65,6 +69,11 @@ function DebtPanel({ counterparty, onSettled }: { counterparty: Counterparty; on
 
   return (
     <div className="bg-neutral-50 px-6 py-4 border-t border-neutral-100">
+      {settleError && (
+        <div className="mb-2 rounded border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700">
+          {settleError}
+        </div>
+      )}
       <div className="mb-3 flex items-center justify-between">
         <span className="text-xs font-medium text-neutral-600">
           미결제 외상 {txns.length}건

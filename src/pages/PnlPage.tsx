@@ -34,7 +34,7 @@ function BarChart({ data }: { data: MonthlyStats[] }) {
             <g key={pct}>
               <line x1={32} x2={svgW - 4} y1={y} y2={y} stroke="#e5e7eb" strokeWidth={1} />
               <text x={28} y={y + 4} textAnchor="end" fontSize={9} fill="#9ca3af">
-                {pct === 0 ? "0" : formatKRW(maxVal * pct).replace("₩", "").trim()}
+                {pct === 0 ? "0" : Math.round(maxVal * pct).toLocaleString("ko-KR")}
               </text>
             </g>
           );
@@ -87,8 +87,8 @@ function BarChart({ data }: { data: MonthlyStats[] }) {
                 fill={netIncome >= 0 ? "#10b981" : "#ef4444"}
                 fontWeight="600"
               >
-                {netIncome >= 0 ? "+" : ""}
-                {formatKRW(netIncome).replace("₩", "").replace(",", "")}
+                {netIncome >= 0 ? "+" : "-"}
+                {Math.abs(Math.trunc(netIncome)).toLocaleString("ko-KR")}
               </text>
             </g>
           );

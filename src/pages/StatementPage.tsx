@@ -232,10 +232,10 @@ export function StatementPage() {
                     {sheetExporting ? "내보내는 중…" : "시트로 내보내기"}
                   </Button>
                 </div>
-                {sheetMsg && (
-                  <p className="text-xs text-neutral-500 mt-1">{sheetMsg}</p>
-                )}
               </div>
+              {sheetMsg && (
+                <p className="mt-2 text-xs text-neutral-500">{sheetMsg}</p>
+              )}
             </CardHeader>
             <CardContent className="p-0">
               {rows.length === 0 ? (

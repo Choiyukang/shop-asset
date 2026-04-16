@@ -370,7 +370,7 @@ export function TransactionsPage() {
             color: it.product_color.trim() || null,
             purchase_price: form.type === "purchase" ? it.unit_price : 0,
             sale_price: form.type === "sale" ? it.unit_price : 0,
-            stock: 0,
+            stock: form.type === "sale" ? it.quantity : 0,
             memo: null,
             counterparty_id: resolvedCpId,
             purchase_date: form.date,
@@ -556,8 +556,8 @@ export function TransactionsPage() {
             <Button type="button" variant="secondary" onClick={() => setOverstockConfirm(null)}>
               취소
             </Button>
-            <Button type="button" onClick={() => executeSubmit()}>
-              계속 진행
+            <Button type="button" onClick={() => executeSubmit()} disabled={submitting}>
+              {submitting ? "저장 중…" : "계속 진행"}
             </Button>
           </div>
         </div>
