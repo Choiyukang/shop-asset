@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MallBook Architecture Diagram</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0f1117;
+    color: #e2e8f0;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    padding: 40px 20px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #f8fafc;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #64748b;
+    font-size: 0.85rem;
+    margin-bottom: 48px;
+  }
+  .diagram {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    gap: 32px;
+  }
+
+  /* Row layouts */
+  .row { display: flex; gap: 20px; align-items: stretch; justify-content: center; }
+  .row.three { }
+  .row.two { }
+
+  /* Layer labels */
+  .layer-label {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    transform: rotate(180deg);
+    color: #475569;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    align-self: center;
+    min-width: 20px;
+  }
+
+  /* Cards */
+  .card {
+    background: #1e2433;
+    border: 1px solid #2d3748;
+    border-radius: 12px;
+    padding: 20px;
+    flex: 1;
+    min-width: 200px;
+    max-width: 320px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: #4a5568; }
+
+  .card.highlight-blue { border-color: #3b82f6; background: #1a2744; }
+  .card.highlight-green { border-color: #10b981; background: #0d2d23; }
+  .card.highlight-purple { border-color: #8b5cf6; background: #1e1a33; }
+  .card.highlight-orange { border-color: #f59e0b; background: #2d2010; }
+  .card.highlight-red { border-color: #ef4444; background: #2d1010; }
+  .card.highlight-teal { border-color: #14b8a6; background: #0d2827; }
+
+  .card-icon { font-size: 1.6rem; margin-bottom: 10px; }
+  .card-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #f1f5f9;
+    margin-bottom: 6px;
+  }
+  .card-sub {
+    font-size: 0.75rem;
+    color: #64748b;
+    margin-bottom: 12px;
+    font-style: italic;
+  }
+  .tag-list { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tag {
+    background: #2d3748;
+    color: #94a3b8;
+    font-size: 0.68rem;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 500;
+  }
+  .tag.blue { background: #1e3a5f; color: #60a5fa; }
+  .tag.green { background: #064e3b; color: #34d399; }
+  .tag.purple { background: #2e1065; color: #c084fc; }
+  .tag.orange { background: #451a03; color: #fb923c; }
+  .tag.teal { background: #042f2e; color: #2dd4bf; }
+
+  /* Arrows */
+  .arrows-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    position: relative;
+  }
+  .arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    max-width: 320px;
+  }
+  .arrow-line {
+    width: 2px;
+    height: 32px;
+    background: linear-gradient(to bottom, #3b82f6, #1e40af);
+    position: relative;
+  }
+  .arrow-line::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 8px solid #1e40af;
+  }
+  .arrow-label {
+    font-size: 0.65rem;
+    color: #475569;
+    text-align: center;
+  }
+
+  /* Horizontal connector */
+  .h-connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin: 0 auto;
+    max-width: 900px;
+  }
+  .h-line {
+    height: 2px;
+    background: #2d3748;
+    flex: 1;
+  }
+  .h-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4a5568;
+    flex-shrink: 0;
+  }
+
+  /* Divider */
+  .divider {
+    border: none;
+    border-top: 1px solid #1e2433;
+    margin: 8px 0;
+  }
+
+  /* Section title */
+  .section-title {
+    text-align: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 16px;
+  }
+
+  /* Wide card */
+  .card.wide { max-width: 680px; min-width: 400px; }
+  .card.full { max-width: 900px; width: 100%; min-width: 0; }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .detail-item { }
+  .detail-item .label {
+    font-size: 0.65rem;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 3px;
+  }
+  .detail-item .value {
+    font-size: 0.78rem;
+    color: #94a3b8;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #1e2433;
+    border: 1px solid #2d3748;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    color: #94a3b8;
+  }
+
+  .flow-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+  .flow-item {
+    background: #2d3748;
+    color: #94a3b8;
+    font-size: 0.72rem;
+    padding: 4px 10px;
+    border-radius: 6px;
+  }
+  .flow-arrow {
+    color: #4a5568;
+    font-size: 0.8rem;
+  }
+</style>
+</head>
+<body>
+
+<h1>MallBook Architecture</h1>
+<p class="subtitle">쇼핑몰 자산관리 앱 · v0.2.8 · Tauri 2 + React + Supabase</p>
+
+<div class="diagram">
+
+  <!-- Layer 1: User -->
+  <div class="section-title">사용자</div>
+  <div class="row">
+    <div class="card highlight-blue" style="max-width:500px;margin:0 auto;">
+      <div class="card-icon">🖥️</div>
+      <div class="card-title">Desktop App (Tauri 2)</div>
+      <div class="card-sub">macOS Universal + Windows</div>
+      <div class="tag-list">
+        <span class="tag blue">React 19</span>
+        <span class="tag blue">TypeScript</span>
+        <span class="tag blue">Vite</span>
+        <span class="tag blue">Zustand</span>
+        <span class="tag blue">TailwindCSS</span>
+        <span class="tag blue">Rust Backend</span>
+      </div>
+      <div class="detail-grid" style="margin-top:14px;">
+        <div class="detail-item">
+          <div class="label">상태관리</div>
+          <div class="value">Zustand Stores</div>
+        </div>
+        <div class="detail-item">
+          <div class="label">UI 라우팅</div>
+          <div class="value">React SPA (단일 페이지)</div>
+        </div>
+        <div class="detail-item">
+          <div class="label">업데이트</div>
+          <div class="value">tauri-plugin-updater</div>
+        </div>
+        <div class="detail-item">
+          <div class="label">빌드</div>
+          <div class="value">GitHub Actions CI/CD</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pages -->
+  <div class="section-title">주요 화면</div>
+  <div class="row three" style="flex-wrap:wrap;justify-content:center;">
+    <div class="card" style="min-width:160px;max-width:190px;">
+      <div class="card-icon">📊</div>
+      <div class="card-title" style="font-size:0.82rem;">Dashboard</div>
+      <div class="tag-list"><span class="tag">매출요약</span><span class="tag">부가세D-day</span><span class="tag">미수금</span></div>
+    </div>
+    <div class="card" style="min-width:160px;max-width:190px;">
+      <div class="card-icon">💳</div>
+      <div class="card-title" style="font-size:0.82rem;">거래 내역</div>
+      <div class="tag-list"><span class="tag">구매/판매/지출</span><span class="tag">재고연동</span></div>
+    </div>
+    <div class="card" style="min-width:160px;max-width:190px;">
+      <div class="card-icon">📦</div>
+      <div class="card-title" style="font-size:0.82rem;">상품</div>
+      <div class="tag-list"><span class="tag">색상별재고</span><span class="tag">미송관리</span></div>
+    </div>
+    <div class="card" style="min-width:160px;max-width:190px;">
+      <div class="card-icon">🏢</div>
+      <div class="card-title" style="font-size:0.82rem;">거래처</div>
+      <div class="tag-list"><span class="tag">외상정산</span><span class="tag">수수료율</span></div>
+    </div>
+    <div class="card" style="min-width:160px;max-width:190px;">
+      <div class="card-icon">🧾</div>
+      <div class="card-title" style="font-size:0.82rem;">부가세신고</div>
+      <div class="tag-list"><span class="tag">기간별VAT</span><span class="tag">CSV</span></div>
+    </div>
+    <div class="card" style="min-width:160px;max-width:190px;">
+      <div class="card-icon">📈</div>
+      <div class="card-title" style="font-size:0.82rem;">손익리포트</div>
+      <div class="tag-list"><span class="tag">월별차트</span><span class="tag">CSV</span></div>
+    </div>
+  </div>
+
+  <!-- Arrow down -->
+  <div class="arrows-row" style="justify-content:center;">
+    <div class="arrow" style="max-width:200px;">
+      <div class="arrow-label">Supabase JS Client</div>
+      <div class="arrow-line"></div>
+    </div>
+    <div class="arrow" style="max-width:200px;">
+      <div class="arrow-label">Google API / Telegram</div>
+      <div class="arrow-line" style="background:linear-gradient(to bottom,#10b981,#065f46);"></div>
+      <style>.arrow-line.green::after { border-top-color: #065f46; }</style>
+    </div>
+  </div>
+
+  <!-- Layer 2: Backend Services -->
+  <div class="section-title">외부 서비스</div>
+  <div class="row" style="flex-wrap:wrap;justify-content:center;gap:20px;">
+
+    <div class="card highlight-green" style="max-width:300px;">
+      <div class="card-icon">🗄️</div>
+      <div class="card-title">Supabase</div>
+      <div class="card-sub">PostgreSQL · RLS 비활성 (개인용)</div>
+      <div class="tag-list">
+        <span class="tag green">users</span>
+        <span class="tag green">counterparties</span>
+        <span class="tag green">products</span>
+        <span class="tag green">transactions</span>
+        <span class="tag green">transaction_items</span>
+        <span class="tag green">tax_records</span>
+        <span class="tag green">categories</span>
+        <span class="tag green">transaction_templates</span>
+      </div>
+      <hr class="divider" style="margin:12px 0;border-color:#1a4a35;">
+      <div class="detail-item">
+        <div class="label">RPC Functions</div>
+        <div class="value" style="font-size:0.75rem;">adjust_stock (원자적 재고 조정)</div>
+      </div>
+    </div>
+
+    <div class="card highlight-teal" style="max-width:260px;">
+      <div class="card-icon">📊</div>
+      <div class="card-title">Google Sheets</div>
+      <div class="card-sub">OAuth 2.0 · Desktop Flow</div>
+      <div class="tag-list">
+        <span class="tag teal">월별 거래 탭</span>
+        <span class="tag teal">재고 탭</span>
+        <span class="tag teal">요약 탭</span>
+        <span class="tag teal">정산서 탭</span>
+      </div>
+      <hr class="divider" style="margin:12px 0;border-color:#0d3533;">
+      <div class="detail-item">
+        <div class="label">동기화</div>
+        <div class="value" style="font-size:0.75rem;">거래 저장 시 자동 append<br>전체/복원 수동 동기화</div>
+      </div>
+    </div>
+
+    <div class="card highlight-blue" style="max-width:240px;">
+      <div class="card-icon">✈️</div>
+      <div class="card-title">Telegram Bot</div>
+      <div class="card-sub">tokio-telegram · Rust</div>
+      <div class="tag-list">
+        <span class="tag blue">/today</span>
+        <span class="tag blue">/month</span>
+        <span class="tag blue">/unpaid</span>
+        <span class="tag blue">/due</span>
+        <span class="tag blue">/stock</span>
+        <span class="tag blue">/tax</span>
+      </div>
+      <hr class="divider" style="margin:12px 0;border-color:#1a2744;">
+      <div class="detail-item">
+        <div class="label">인증</div>
+        <div class="value" style="font-size:0.75rem;">Bot Token 저장 (Tauri secure store)</div>
+      </div>
+    </div>
+
+    <div class="card highlight-purple" style="max-width:240px;">
+      <div class="card-icon">💾</div>
+      <div class="card-title">Google Drive</div>
+      <div class="card-sub">DB 백업/복원 전용</div>
+      <div class="tag-list">
+        <span class="tag purple">mallbook_backup.db</span>
+        <span class="tag purple">SQLite 전체 백업</span>
+      </div>
+      <hr class="divider" style="margin:12px 0;border-color:#2a1050;">
+      <div class="detail-item">
+        <div class="label">권한</div>
+        <div class="value" style="font-size:0.75rem;">Drive scope 추가 필요<br>(구글 재연결 시)</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Arrow down -->
+  <div class="arrows-row" style="justify-content:center;">
+    <div class="arrow" style="max-width:200px;">
+      <div class="arrow-label">GitHub Actions · 자동 빌드/배포</div>
+      <div class="arrow-line" style="background:linear-gradient(to bottom,#8b5cf6,#5b21b6);"></div>
+    </div>
+  </div>
+
+  <!-- Layer 3: CI/CD -->
+  <div class="section-title">배포 파이프라인</div>
+  <div class="row" style="justify-content:center;">
+    <div class="card full highlight-purple" style="max-width:800px;">
+      <div class="card-icon">🚀</div>
+      <div class="card-title">GitHub Actions CI/CD</div>
+      <div class="card-sub">v* 태그 push → 자동 빌드 → 자동 업데이트</div>
+      <div class="flow-row">
+        <span class="flow-item">git tag vX.Y.Z</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-item">GitHub Actions 트리거</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-item">macOS Universal 빌드</span>
+        <span class="flow-arrow">+</span>
+        <span class="flow-item">Windows 빌드</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-item">GitHub Releases</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-item">앱 자동업데이트 알림</span>
+      </div>
+      <div class="flow-row" style="margin-top:8px;">
+        <span class="badge">⏱️ 빌드 8~15분</span>
+        <span class="badge">🔑 Secrets: VITE_SUPABASE_ANON_KEY, VITE_GOOGLE_CLIENT_ID</span>
+        <span class="badge">📦 latest.json 기반 업데이터</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data Flow -->
+  <div class="section-title">주요 데이터 흐름</div>
+  <div class="row" style="flex-wrap:wrap;justify-content:center;gap:16px;">
+    <div class="card" style="max-width:360px;">
+      <div class="card-icon">💳</div>
+      <div class="card-title" style="font-size:0.85rem;">거래 생성 흐름</div>
+      <div class="flow-row">
+        <span class="flow-item">폼 입력</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-item">Supabase insert</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-item">adjust_stock RPC</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-item">Sheets append</span>
+      </div>
+    </div>
+    <div class="card" style="max-width:360px;">
+      <div class="card-icon">🔄</div>
+      <div class="card-title" style="font-size:0.85rem;">시트 동기화 흐름</div>
+      <div class="flow-row">
+        <span class="flow-item">전체동기화</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-item">월별 탭 writeTabRows</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-item">synced_to_sheet=1</span>
+      </div>
+    </div>
+    <div class="card" style="max-width:360px;">
+      <div class="card-icon">📱</div>
+      <div class="card-title" style="font-size:0.85rem;">Telegram 조회 흐름</div>
+      <div class="flow-row">
+        <span class="flow-item">/today 명령</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-item">Rust 핸들러</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-item">Supabase 쿼리</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-item">Bot 응답</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="text-align:center;margin-top:48px;color:#334155;font-size:0.72rem;">
+  MallBook v0.2.8 · github.com/Choiyukang/shop-asset · Generated by Claude
+</div>
+
+</body>
+</html>
